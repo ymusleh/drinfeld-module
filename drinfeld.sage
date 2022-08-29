@@ -1,4 +1,5 @@
 import collections.abc
+from time import perf_counter
 
 from sage.structure.parent import Parent
 from sage.categories.vector_spaces import VectorSpaces
@@ -85,6 +86,7 @@ class DMContext():
         such that self._frob_L[(a, i)] = a^(q^i)
         """
         self._frob_L = dict()
+        self._frob_L_v2 = dict()
 
 
 
@@ -100,17 +102,18 @@ class DMContext():
 
     """
 
+
     def _fast_skew(self, a, iters = 1):
         # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
         t_iters = iters % self._n
-        if parent(a) is self._base or t_iters == 0:
+        if a.parent() is self._base or t_iters == 0:
             return a
         if (a, t_iters) in self._frob_L:
             return self._frob_L[(a, t_iters)]
 
         # Should properly fix this to properly check for coercion
 
-        if parent(a) is self._L or True:
+        if a.parent() is self._L or True:
             im = self._L(a)
             for i in range(t_iters):
                 """
@@ -118,6 +121,34 @@ class DMContext():
                 """
                 im = self._ore_ring.twisting_morphism()(im)
             self._frob_L[(a, t_iters)] = im
+            return im
+        raise TypeError(f"{a} does not coerce into {self._L}")
+
+    def _fast_skew_v2(self, a, iters = 1):
+        # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
+        t_iters = iters % self._n
+        if parent(a) is self._base or t_iters == 0:
+            return a
+        if a in self._frob_L_v2 and t_iters in self._frob_L_v2[a]:
+            return self._frob_L_v2[a][t_iters]
+
+        # Should properly fix this to properly check for coercion
+
+        if parent(a) is self._L or True:
+            if not a in self._frob_L_v2:
+                self._frob_L_v2[a] = dict()
+                start = 0
+                im = self._L(a)
+            else:
+                start = max(self._frob_L_v2[a].keys())
+                im = self._frob_L_v2[a][start]
+            for i in range(start, t_iters):
+                """
+                TODO: Replace this critical line with a more efficient approach.
+                """
+                im = self._ore_ring.twisting_morphism()(im)
+                self._frob_L_v2[a][i + 1] = im
+            self._frob_L_v2[a][t_iters] = im
             return im
         raise TypeError(f"{a} does not coerce into {self._L}")
 
@@ -441,10 +472,11 @@ Given the cohomology space, compute the canonical basis representation of \eta_x
 def rec_mat_meth(cohom, deg):
     r = cohom._dim
     k_0, k, k_rel = cohom._basis_rep.nrows() - r, deg - r, k - k_0
-    sstar = ceil(sqrt(k_rel))
-    s0, s1 = k_rel % sstar, k_rel // sstar
+    sstar, s0, s1 = ceil(sqrt(k_rel)), k_rel % sstar, k_rel // sstar
     rec_matr = matrix(cohom.L(), r, r)
-    rec_matr[0] = [ cohom.dm().gen() ]
+    rec_vec = [ cohom.dm()[r - i]/cohom.dm()[r] for i in range(1, r) ]
+    matrs = [  ]
+
     # Start the computations using the last r powers computed.
     start = cohom._basis_rep.matrix_from_rows_and_columns(range(cohom._basis_rep.nrows() - r, cohom._basis_rep.nrows()), range(r))
 
@@ -473,27 +505,45 @@ if test_base:
     print("making module")
     dm5 = DrinfeldModule(sp, con)
 
+    print("testing fast skew")
+    ell = con._L.random_element()
+    print(f'element: {ell}')
+    elli = ell**(8**3)
+    ellj = con._fast_skew(ell, 3)
+    ell0 = elli - ellj
+    print(f'q^3 test (should be 0): {ell0}')
+    ellip = ell**(8**5)
+    elljp = con._fast_skew(ell, 5)
+    ell0p = ellip - elljp
+    print(f'q^5 test (should be 0): {ell0p}')
+
+
+
     print("generating element")
-    a = dm5.reg().random_element(7)
+    a = dm5.reg().random_element(8)
 
     print("new")
+    t1 = perf_counter()
     ima1 = dm5(a)
+    t2 = perf_counter()
+    print(f"new time: {t2 - t1}")
     print("done1")
     ac = a.coefficients(sparse=False)
     print("old")
-    ima2 = dm5.raw_im(ac)
+    #ima2 = dm5.raw_im(ac)
 
     print("gamma map")
     print(dm5.gamma(a))
 
     print("check (should be 0)")
-    print(ima2 - ima1)
+    #print(ima2 - ima1)
     sigma = dm5.ore_ring().twisting_morphism()
 
     print("true")
     print(dm5.gen()^7)
     print("reversed")
-    print(dm5._phi_x_matrix[7])
+    revarr = list(reversed(dm5._phi_x_matrix[7]))
+    print(revarr)
 
 
     print("testing inverse images")

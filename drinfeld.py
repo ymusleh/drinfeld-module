@@ -89,6 +89,7 @@ class DMContext():
         such that self._frob_L[(a, i)] = a^(q^i)
         """
         self._frob_L = dict()
+        self._frob_L_v2 = dict()
 
 
 
@@ -122,6 +123,42 @@ class DMContext():
                 """
                 im = self._ore_ring.twisting_morphism()(im)
             self._frob_L[(a, t_iters)] = im
+            return im
+        raise TypeError(f"{a} does not coerce into {self._L}")
+
+
+    """
+    This version is a bit more aggressive with using previously cached powers. to start off with. probably not super useful
+    for low degree extensions n.
+
+    Switch to this one for larger values of n.
+    """
+
+    def _fast_skew_v2(self, a, iters = 1):
+        # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
+        t_iters = iters % self._n
+        if a.parent() is self._base or t_iters == 0:
+            return a
+        if a in self._frob_L_v2 and t_iters in self._frob_L_v2[a]:
+            return self._frob_L_v2[a][t_iters]
+
+        # Should properly fix this to properly check for coercion
+
+        if a.parent() is self._L or True:
+            if not a in self._frob_L_v2:
+                self._frob_L_v2[a] = dict()
+                start = 0
+                im = self._L(a)
+            else:
+                start = max(self._frob_L_v2[a].keys())
+                im = self._frob_L_v2[a][start]
+            for i in range(start, t_iters):
+                """
+                TODO: Replace this critical line with a more efficient approach.
+                """
+                im = self._ore_ring.twisting_morphism()(im)
+                self._frob_L_v2[a][i + 1] = im
+            self._frob_L_v2[a][t_iters] = im
             return im
         raise TypeError(f"{a} does not coerce into {self._L}")
 
