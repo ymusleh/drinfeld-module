@@ -3,12 +3,16 @@ import collections.abc
 from sage.structure.parent import Parent
 from sage.categories.vector_spaces import VectorSpaces
 
+from sage.rings.finite_rings.finite_field_base import FiniteField
 from sage.rings.polynomial.ore_polynomial_element import OrePolynomial
 from sage.rings.polynomial.ore_polynomial_ring import OrePolynomialRing
 from sage.rings.polynomial.polynomial_ring import PolynomialRing_general
+from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 from sage.rings.finite_rings.finite_field_base import FiniteField
 from sage.rings.integer import Integer
-from sage.matrix.constructor import Matrix
+from sage.matrix.constructor import Matrix, matrix, vector, identity_matrix
+from sage.rings.finite_rings.finite_field_constructor import GF
+from sage.rings.all import Field
 
 
 class DMContext():
@@ -45,7 +49,7 @@ class DMContext():
     """
     def __init__(self, base, L, var = 'x', svar = 't', lvar = 'z'):
         # Create base field
-        if isinstance(base, FiniteField):
+        if isinstance(base, Field):
             self._base = base
         elif (base in ZZ or isinstance(base, int)) and is_prime_power(base):
             self._base = GF(base)
@@ -61,7 +65,7 @@ class DMContext():
             Lp = PolynomialRing(self._base, lvar)
             self._L = self._base.extension(Lp.irreducible_element(L))
             self._n = L
-        elif isinstance(parent(L), PolynomialRing_general) and parent(L).base() is self._base and len(L.variables()) == 1 and L.is_irreducible():
+        elif isinstance(L.parent(), PolynomialRing_general) and L.parent().base() is self._base and len(L.variables()) == 1 and L.is_irreducible():
             lvar = L.variables()[0]
             Lp = PolynomialRing(self._base, lvar)
             self._L = self._base.extension(L)
@@ -103,14 +107,14 @@ class DMContext():
     def _fast_skew(self, a, iters = 1):
         # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
         t_iters = iters % self._n
-        if parent(a) is self._base or t_iters == 0:
+        if a.parent() is self._base or t_iters == 0:
             return a
         if (a, t_iters) in self._frob_L:
             return self._frob_L[(a, t_iters)]
 
         # Should properly fix this to properly check for coercion
 
-        if parent(a) is self._L or True:
+        if a.parent() is self._L or True:
             im = self._L(a)
             for i in range(t_iters):
                 """
@@ -128,20 +132,20 @@ class DMContext():
 class DrinfeldModule():
     def __init__(self, ore, context=None):
         # determine if we are initializing from a skew polynomial or an array
-        skew_gen = isinstance(parent(ore), OrePolynomialRing)
+        skew_gen = isinstance(ore.parent(), OrePolynomialRing)
         """
         Ensure we are initializing with a valid data type.
         Valid data types: ore polynomial, python sequences, or sage
         We will later check that these data types contain entries or coefficients over a field.
         """
-        if not skew_gen and not isinstance(ore, collections.abc.Sequence) and not isinstance(parent(ore), MatrixSpace):
+        if not skew_gen and not isinstance(ore, collections.abc.Sequence) and not isinstance(ore.parent(), MatrixSpace):
             print("Not a valid data type")
 
         if context == None:
             # init context from ore
             if skew_gen:
                 # This does some checking that is already done when the context is created. Should probably elminiate this.
-                L = parent(ore).base()
+                L = ore.parent().base()
                 F_q = L.base().base()
                 self._context = DMContext(F_q, L)
         else:
@@ -149,14 +153,14 @@ class DrinfeldModule():
 
 
         if skew_gen:
-            if parent(ore) is self.ore_ring():
+            if ore.parent() is self.ore_ring():
                 self._gen = ore
             else:
                 raise TypeError(f'Ore polynomial {ore} not a valid member of Skew polynomial ring {context._ore_ring}')
         else:
             self._gen = self.ore_ring().zero()
             for i, coeff in enumerate(ore):
-                self._gen += self.L()(coeff)*self.ore_ring().gen()^i
+                self._gen += self.L()(coeff)*self.ore_ring().gen()**i
 
 
         self._rank = self._gen.degree()
@@ -186,7 +190,7 @@ class DrinfeldModule():
     """
 
     def gamma(self, a):
-        return sum([coeff*self._gamma_x^i for i, coeff in enumerate(a.coefficients(sparse=False))])
+        return sum([coeff*self._gamma_x**i for i, coeff in enumerate(a.coefficients(sparse=False))])
 
 
     """
@@ -224,14 +228,14 @@ class DrinfeldModule():
     defined by x |--> self.gen().
     """
     def _map(self, a):
-        if not (parent(a) is self.reg()):
+        if not (a.parent() is self.reg()):
             raise TypeError(f'{a} is not a valid regular function in the domain.')
             # Expand the matrix of powers of \phi_x if degree of a is too large
         if a.degree() >= len(self._phi_x_matrix): self._phi_x_v2(a.degree())
         im = self.ore_ring().zero()
         for i, coeff in enumerate(a.coefficients(sparse=False)):
             for j, roeff in enumerate(self._phi_x_matrix[i]):
-                im += coeff*roeff*self.ore_ring().gen()^j
+                im += coeff*roeff*self.ore_ring().gen()**j
         return im
 
 
@@ -280,18 +284,13 @@ class DrinfeldModule():
     """
 
     def _eval(self, poly, a):
-        if parent(poly) is self.ore_ring():
+        if poly.parent() is self.ore_ring():
             return sum([poly.coefficients(sparse=False)[i]*self.fast_skew(a, i) for i in range(poly.degree() + 1)])
-        elif parent(poly) is self.reg():
+        elif poly.parent() is self.reg():
             # For now, just compute the image and evaluate at a
             return self._eval(self(poly), a)
         else:
             raise TypeError(f"{poly} is not a valid polynomial in the domain or codomain of the Drinfeld Module")
-
-
-
-
-
 
     """
     getters
@@ -327,7 +326,7 @@ class DrinfeldModule():
     for testing purposes
     """
     def raw_im(self, ac):
-        return sum([self.gen()^(i) *ac[i] for i in range(len(ac)) ])
+        return sum([self.gen()**(i)*ac[i] for i in range(len(ac)) ])
 
 
 
@@ -396,8 +395,6 @@ class DrinfeldCohomology_dR(Parent):
         """
         self._basis_rep = identity_matrix(self.L(), self.dm().rank())
 
-
-
     """
     Getters
     """
@@ -409,8 +406,6 @@ class DrinfeldCohomology_dR(Parent):
     # Since H_dR is a vector space over L it makes sense to have direct access.
     def L(self):
         return self.dm().L()
-
-
 
 class DrinfeldCohomology_Crys(Parent):
     def __init__(self, dm):
@@ -430,73 +425,3 @@ Given
 
 def recurrence_matrix_method():
     pass
-
-"""
-Tests
-"""
-test_base = True
-
-if test_base:
-    F = GF(8)
-    Fp = PolynomialRing(F, 'y')
-    ip = Fp.irreducible_element(4)
-    LL = F.extension(ip)
-    con = DMContext(F, LL)
-
-    sp = con._ore_ring.random_element(5)
-
-    spp = sp.coefficients()
-    spp[0] = LL('y')
-
-
-    print("making module")
-    dm5 = DrinfeldModule(sp, con)
-
-    print("generating element")
-    a = dm5.reg().random_element(7)
-
-    print("new")
-    ima1 = dm5(a)
-    print("done1")
-    ac = a.coefficients(sparse=False)
-    print("old")
-    ima2 = dm5.raw_im(ac)
-
-    print("gamma map")
-    print(dm5.gamma(a))
-
-    print("check (should be 0)")
-    print(ima2 - ima1)
-    sigma = dm5.ore_ring().twisting_morphism()
-
-    print("true")
-    print(dm5.gen()^7)
-    print("reversed")
-    print(dm5._phi_x_matrix[7])
-
-
-    print("testing inverse images")
-    z4 = dm5.base().gen()
-    xi = dm5.reg().gen()
-    tpoly = (z4 + 1)*xi^6 + (z4^2 + z4 + 1)*xi^5 + (z4^2 + z4)*xi^4 + (z4^2 + z4)*xi^3 + z4^2*xi^2 + 1
-    #dm5.reg().random_element(6)
-    tp_im = dm5(tpoly)
-    print(tpoly)
-    print("check inversion (should be 0)")
-    av = dm5._inverse(tp_im)
-    print(av - tpoly)
-
-    print("testing evaluation map")
-    a1_reg = dm5.reg().random_element(5)
-    ep = dm5.L().random_element()
-
-    a1_skew = dm5(a1_reg)
-
-    eva = dm5._eval(a1_reg, ep)
-
-    eva2 = dm5._eval(a1_skew, ep)
-
-    print("Should be the same")
-    print(eva2 - eva)
-
-    drham = DrinfeldCohomology_dR(dm5)
