@@ -164,8 +164,6 @@ class DrinfeldModule():
         Cache for coefficients of powers \phi_x^i
         '''
         self._phi_x_matrix = [[self.L().one()], self._gen.coefficients(sparse=False)]
-
-        #self._ore_powers = [1, self.ore_ring().gen()]
         """
         Intermediate Field parameters
         The intermediate field F_{\frak{p}} = \gamma(A) can be inferred since \gamma(x) is the constant term \phi_x
@@ -260,14 +258,6 @@ class DrinfeldModule():
             rhs[i] = a[self._rank*i]
             for j in range(i, d + 1):
                 inv_sys[i,j] = self._phi_x_matrix[j][self._rank*i]
-
-        # print("RHS")
-        # print(rhs)
-        # #print(len(rhs))
-        # print("MATR")
-        # print(inv_sys)
-        # print(inv_sys.rows())
-        # #print(len(inv_sys[0]))
 
         """
         Will likely change this to catch ValueError if no solution exists
@@ -404,9 +394,6 @@ class DrinfeldCohomology_dR(Parent):
         This is initialized to the r x r identity.
 
         """
-        # the manual way
-        # self._basis_rep = [[ self.dm().L().zero() if j != i else self.dm().L().one() for j in range(self.dm().rank()) ] for i in range(self.dm().rank())]
-        # self._basis_rep = matrix(self.dm().L(), self.dm().rank(), self.dm().rank())
         self._basis_rep = identity_matrix(self.L(), self.dm().rank())
 
 
@@ -473,7 +460,7 @@ if test_base:
     print("done1")
     ac = a.coefficients(sparse=False)
     print("old")
-    ima2 = dm5.raw_im(ac) #sum([dm5.gen()^(i) *ac[i] for i in range(len(ac)) ])
+    ima2 = dm5.raw_im(ac)
 
     print("gamma map")
     print(dm5.gamma(a))
