@@ -182,6 +182,15 @@ class DrinfeldModule():
         return self._map(a)
 
     """
+    Get the ith coefficient of the skew polynomial \phi_x
+    """
+    def __getitem__(self, i):
+        if isinstance(i, int) or isinstance(i, Integer) and i <= self.rank() and i >= 0:
+            return self.gen().coefficients()[i]
+        else:
+            raise ValueError("Invalid subscript access for drinfeld module.")
+
+    """
     Compute the image of a polynomial a under the A-characteristic map \gamma
     """
 
@@ -381,6 +390,7 @@ class DrinfeldCohomology_dR(Parent):
     def __init__(self, dm):
         # The associated Drinfeld Module
         self._dm = dm
+        self._dim = dm.rank()
         # Not sure how necessary this is since we are mostly concerned with performance
         # over providing a framework for algebraic computation
         self._init_category_(VectorSpaces(self.L()))
@@ -394,7 +404,7 @@ class DrinfeldCohomology_dR(Parent):
         This is initialized to the r x r identity.
 
         """
-        self._basis_rep = identity_matrix(self.L(), self.dm().rank())
+        self._basis_rep = identity_matrix(self.L(), self._dim)
 
 
 
@@ -424,12 +434,23 @@ class DrinfeldCohomology_Crys(Parent):
 """
 An implementation of the matrix method for solving linearly recurrent sequence
 
-Given
+Given the cohomology space, compute the canonical basis representation of \eta_x = \tau^deg
 
 """
 
-def recurrence_matrix_method():
-    pass
+def rec_mat_meth(cohom, deg):
+    r = cohom._dim
+    k_0, k, k_rel = cohom._basis_rep.nrows() - r, deg - r, k - k_0
+    sstar = ceil(sqrt(k_rel))
+    s0, s1 = k_rel % sstar, k_rel // sstar
+    rec_matr = matrix(cohom.L(), r, r)
+    rec_matr[0] = [ cohom.dm().gen() ]
+    # Start the computations using the last r powers computed.
+    start = cohom._basis_rep.matrix_from_rows_and_columns(range(cohom._basis_rep.nrows() - r, cohom._basis_rep.nrows()), range(r))
+
+
+
+
 
 """
 Tests

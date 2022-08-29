@@ -185,6 +185,16 @@ class DrinfeldModule():
     def __call__(self, a):
         return self._map(a)
 
+
+    """
+    Get the ith coefficient of the skew polynomial \phi_x
+    """
+    def __getitem__(self, i):
+        if isinstance(i, int) or isinstance(i, Integer) and i <= self.rank() and i >= 0:
+            return self.gen().coefficients()[i]
+        else:
+            raise ValueError("Invalid subscript access for drinfeld module.")
+
     """
     Compute the image of a polynomial a under the A-characteristic map \gamma
     """

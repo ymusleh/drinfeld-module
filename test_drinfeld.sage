@@ -85,3 +85,10 @@ drham = DrinfeldCohomology_dR(dm5)
 #sp = con._ore_ring.random_element(5)
 
 #dm5 = DrinfeldModule(sp, con)
+
+print("testing coefficient access")
+print(dm5.gen())
+print(f'0th: {dm5[0]}')
+print(f'1st: {dm5[1]}')
+print(f'3rd: {dm5[3]}')
+print(f'5th: {dm5[5]}')
