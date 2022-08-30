@@ -14,6 +14,15 @@ from sage.matrix.constructor import Matrix, matrix, vector, identity_matrix
 from sage.rings.finite_rings.finite_field_constructor import GF
 from sage.rings.all import Field
 
+from sage.functions.all import ceil, sqrt
+from sage.misc.misc_c import prod
+
+def get_coeffs(a):
+    if hasattr(a, 'coefficients'):
+        return a.coefficients(sparse=False)
+    elif hasattr(a, 'list'):
+        return a.list()
+
 
 class DMContext():
     """
@@ -77,6 +86,8 @@ class DMContext():
             self._n = L.modulus().degree()
         else:
             raise TypeError("Can't construct the extension field with the data given.")
+
+        self._modulus = self._L.modulus()
 
         sigma = self._L.frobenius_endomorphism(base.degree())
 
@@ -162,6 +173,12 @@ class DMContext():
             return im
         raise TypeError(f"{a} does not coerce into {self._L}")
 
+    """
+    Interpret any polynomial over F_q as an element over A
+    """
+    def to_reg(self, a):
+        return self._reg(get_coeffs(a))
+
 
 
 
@@ -169,7 +186,8 @@ class DMContext():
 class DrinfeldModule():
     def __init__(self, ore, context=None):
         # determine if we are initializing from a skew polynomial or an array
-        skew_gen = isinstance(ore.parent(), OrePolynomialRing)
+        arr_gen = isinstance(ore, collections.abc.Sequence)
+        skew_gen = not arr_gen
         """
         Ensure we are initializing with a valid data type.
         Valid data types: ore polynomial, python sequences, or sage
@@ -212,6 +230,8 @@ class DrinfeldModule():
         """
         self._gamma_x = self.gen().coefficients(sparse=False)[0] # image of x is the constant term
         self._a_char = self._gamma_x.minpoly()
+        self._m = self._a_char.degree()
+        self._prime_field = self.base().extension(self._a_char)
 
 
 
@@ -273,10 +293,17 @@ class DrinfeldModule():
     """
     Given a member \a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
     defined by x |--> self.gen().
+
+    This is fairly aggressive at coercing thanks to the to_reg method.
     """
     def _map(self, a):
-        if not (a.parent() is self.reg()):
-            raise TypeError(f'{a} is not a valid regular function in the domain.')
+        # This only makes sense if L is identical to the intermediate field, otherwise we need to do more here
+        # if a.parent() is self.L():
+        #     a = self._context.L_to_reg(a)
+        # elif not (a.parent() is self.reg()):
+        #     raise TypeError(f'{a} is not a valid regular function in the domain.')
+        # Convert it if possible
+        a = self.to_reg(a)
             # Expand the matrix of powers of \phi_x if degree of a is too large
         if a.degree() >= len(self._phi_x_matrix): self._phi_x_v2(a.degree())
         im = self.ore_ring().zero()
@@ -325,6 +352,9 @@ class DrinfeldModule():
     Given either an element of self.reg() or a skew polynomial and an element of L
     Compute its image under the Drinfeld Module action.
 
+    if a in A and b in L then this computes \phi_a(b)
+    if a is a skew polynomial, this computes a(b)
+
     Technically should check if poly is actually in \phi(A). This could be done by
     inverting poly but that is quite costly so probably won't do that. Will likely
     just check degrees.
@@ -349,6 +379,12 @@ class DrinfeldModule():
     """
     Getters for Context properties and methods
     """
+    def n(self):
+        return self._context._n
+
+    def modulus(self):
+        return self._context._modulus
+
     def rank(self):
         return self._rank
 
@@ -357,6 +393,9 @@ class DrinfeldModule():
 
     def L(self):
         return self._context._L
+
+    def prime_field(self):
+        return self._prime_field
 
     def reg(self):
         return self._context._reg
@@ -367,6 +406,9 @@ class DrinfeldModule():
     def fast_skew(self, a, iters = 1):
         return self._context._fast_skew(a, iters)
 
+    def to_reg(self, a):
+        return self._context.to_reg(a)
+
 
 
     """
@@ -374,6 +416,9 @@ class DrinfeldModule():
     """
     def raw_im(self, ac):
         return sum([self.gen()**(i)*ac[i] for i in range(len(ac)) ])
+
+    def frob_norm(self):
+        return (-1)**((self._rank % 2) + (self.n() % 2)*((self._rank + 1) % 2 ))*(1/self[self._rank].norm())*(self._a_char)**(self.n()/self._m)
 
 
 
@@ -427,6 +472,7 @@ class DrinfeldCohomology_dR(Parent):
     def __init__(self, dm):
         # The associated Drinfeld Module
         self._dm = dm
+        self._dim = dm.rank()
         # Not sure how necessary this is since we are mostly concerned with performance
         # over providing a framework for algebraic computation
         self._init_category_(VectorSpaces(self.L()))
@@ -443,6 +489,67 @@ class DrinfeldCohomology_dR(Parent):
         self._basis_rep = identity_matrix(self.L(), self.dm().rank())
 
     """
+    An implementation of the matrix method for solving linearly recurrent sequence
+
+    Given the cohomology space, compute the canonical basis representation of \eta_x = \tau^deg
+
+    """
+
+    def rec_mat_meth(self, deg):
+        r = self._dim
+        k_0, k = self._basis_rep.nrows() - r, deg - r
+        k_rel = k - k_0
+        sstar = ceil(sqrt(k_rel))
+        s0, s1 = k_rel % sstar, k_rel // sstar
+        rec_matr = matrix(self.L(), r, r)
+        rec_coeff = [ self.L()(-1)*self.dm()[r - i]/self.dm()[r] for i in range(1, r + 1) ]
+
+        coeff_ring = PolynomialRing(self.L(), 'V')
+
+        # The initial matrices
+        matr0 = [self.init_matr(rec_coeff, i, self.L()) for i in range(s0, 0, -1)]
+        # The polynomial matrices
+        matry = [self.init_matr(rec_coeff, i, coeff_ring, True) for i in range(sstar + s0, s0, -1)]
+
+        # print(f's0: {s0} | s1: {s1} | sstar: {sstar}')
+
+        # See notation from my presentations
+        c0 = prod(matr0)
+        cy = prod(matry)
+        matrs = [matrix(cy) for i in range(s1 - 1, -1, -1)]
+        eval_matrs = [matrs[i].apply_map(lambda a: coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar))) for i in range(s1 -1, -1, -1)]
+        power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: self.fast_skew(a, i*sstar)) for i in range(s1 -1, -1, -1)]
+        start = self._basis_rep.matrix_from_rows_and_columns(range(self._basis_rep.nrows() - r, self._basis_rep.nrows()), range(r))
+        return prod(power_eval_matrs)*c0*start
+
+    """
+    Initialize matrix for use in the recurrence method.
+    """
+    def init_matr(self, coeffs, k, ring, usepoly = False):
+        r = self._dim
+        matr = matrix(ring, r, r)
+        for i in range(r):
+            matr[0, i] = self.fast_skew(coeffs[i], k)
+        for i in range(r-1):
+            matr[i + 1, i] = 1
+        if usepoly:
+            # print(f"coeff of gen: {(1/(self.fast_skew(self.dm()[r], k)))} | gen: {ring.gen()} | k: {k} | lead: {self.dm()[r]}")
+            matr[0, r-1] += (1/(self.fast_skew(self.dm()[r], k)))*ring.gen()
+        else:
+            matr[0, r-1] += self.dm()[0]/(self.fast_skew(self.dm()[r], k))
+
+        # print(f'init order {k}')
+        # print(matr)
+        return matr
+
+    def char_poly(self):
+        cpolyring = PolynomialRing(self.dm().reg(), 'X')
+        # sometimes have to conver to the gamma adic representation
+        return sum([self.dm().to_reg(coeff)*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+
+
+    """
     Getters
     """
     # Return the underlying Drinfeld Module
@@ -453,6 +560,9 @@ class DrinfeldCohomology_dR(Parent):
     # Since H_dR is a vector space over L it makes sense to have direct access.
     def L(self):
         return self.dm().L()
+
+    def fast_skew(self, a, iters = 1):
+        return self.dm()._context._fast_skew_v2(a, iters)
 
 class DrinfeldCohomology_Crys(Parent):
     def __init__(self, dm):
@@ -470,5 +580,5 @@ Given
 
 """
 
-def recurrence_matrix_method():
-    pass
+def check_char(dm, cp, frob_norm = 1):
+    return sum([dm(cp[i])*dm.ore_ring().gen()**(dm.n()*i) for i in range(cp.degree() + 1)]) + frob_norm*dm(dm.frob_norm())

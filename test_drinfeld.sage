@@ -17,10 +17,10 @@ from sage.matrix.constructor import vector, matrix
 #import sage.rings
 from sage.structure.parent import Parent
 
-from drinfeld import DMContext, DrinfeldModule, DrinfeldCohomology_dR, DrinfeldCohomology_Crys
+from drinfeld import DMContext, DrinfeldModule, DrinfeldCohomology_dR, DrinfeldCohomology_Crys, check_char
 
-
-F = GF(8)
+q = 125
+F = GF(q)
 Fp = PolynomialRing(F, 'y')
 ip = Fp.irreducible_element(4)
 LL = F.extension(ip)
@@ -34,18 +34,18 @@ spp[0] = LL('y')
 print("testing fast skew")
 ell = con._L.random_element()
 print(f'element: {ell}')
-elli = ell**(8**3)
+elli = ell**(q**3)
 ellj = con._fast_skew(ell, 3)
 ell0 = elli - ellj
 print(f'q^3 test (should be 0): {ell0}')
-ellip = ell**(8**5)
+ellip = ell**(q**5)
 elljp = con._fast_skew(ell, 5)
 ell0p = ellip - elljp
 print(f'q^5 test (should be 0): {ell0p}')
 
 
 print("making module")
-dm5 = DrinfeldModule(sp, con)
+dm5 = DrinfeldModule(spp, con)
 
 print("generating element")
 a = dm5.reg().random_element(8)
@@ -108,3 +108,16 @@ print(f'0th: {dm5[0]}')
 print(f'1st: {dm5[1]}')
 print(f'3rd: {dm5[3]}')
 print(f'5th: {dm5[5]}')
+
+
+print("testing L to reg")
+lreg = dm5.L().random_element()
+print(f'elem: {lreg}')
+print(f'reg: {dm5.to_reg(lreg)}')
+print(f'reg map: {dm5(lreg) - dm5(dm5.to_reg(lreg))}')
+print("computing char poly")
+cp = drham.char_poly()
+print(cp)
+print("verification (this should be 0):")
+resultant = check_char(dm5, cp)
+print(resultant)

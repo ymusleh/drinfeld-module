@@ -12,6 +12,13 @@ from sage.rings.integer import Integer
 from sage.matrix.constructor import Matrix
 
 
+def get_coeffs(a):
+    if hasattr(a, 'coefficients'):
+        return a.coefficients(sparse=False)
+    elif hasattr(a, 'list'):
+        return a.list()
+
+
 class DMContext():
     """
     A DMContext stores information about the underlying algebraic structures of a finite
@@ -61,19 +68,24 @@ class DMContext():
         if isinstance(L, Integer) or isinstance(L, int):
             Lp = PolynomialRing(self._base, lvar)
             self._L = self._base.extension(Lp.irreducible_element(L))
+            #self._modulus = self._L.modulus()
             self._n = L
         elif isinstance(parent(L), PolynomialRing_general) and parent(L).base() is self._base and len(L.variables()) == 1 and L.is_irreducible():
             lvar = L.variables()[0]
             Lp = PolynomialRing(self._base, lvar)
             self._L = self._base.extension(L)
+            #self._modulus = L
             self._n = L.degree()
         elif isinstance(L, Field):
             if not ((L.base() is self._base) or (isinstance(L.base(), PolynomialRing_general) and  L.base().base() is self._base)):
                 raise TypeError("Field is not an extension of the base!")
             self._L = L
+            #self._modulus = L.modulus()
             self._n = L.modulus().degree()
         else:
             raise TypeError("Can't construct the extension field with the data given.")
+
+        self._modulus = self._L.modulus()
 
         sigma = self._L.frobenius_endomorphism(base.degree())
 
@@ -152,6 +164,13 @@ class DMContext():
             return im
         raise TypeError(f"{a} does not coerce into {self._L}")
 
+    """
+    Interpret an element of L "canonically" as its reduced polynomial representation in A
+    """
+    def to_reg(self, a):
+        return self._reg(get_coeffs(a))
+        #return sum([coeff*self._reg.gen()**i for i, coeff in enumerate(a.list())])
+
 
 
 
@@ -202,6 +221,10 @@ class DrinfeldModule():
         """
         self._gamma_x = self.gen().coefficients(sparse=False)[0] # image of x is the constant term
         self._a_char = self._gamma_x.minpoly()
+        self._m = self._a_char.degree()
+        self._prime_field = self.base().extension(self._a_char)
+        self._gamma_reg = self._context.to_reg(self._gamma_x)
+        self._gamma_x_inv = self.modulus().roots(self.prime_field())[0][0]
 
 
 
@@ -227,6 +250,78 @@ class DrinfeldModule():
 
     def gamma(self, a):
         return sum([coeff*self._gamma_x^i for i, coeff in enumerate(a.coefficients(sparse=False))])
+
+    # """
+    # Compute the coefficients of the gamma-adic expansion
+    # This should only work
+    # """
+    # def gamma_adic(self, a):
+    #     reg_a = self.reg()(get_coeffs(a))
+    #     if reg_a == self.reg().zero() or reg_a.degree() < self._gamma_reg.degree():
+    #         return reg_a
+    #     expansion = []
+    #     rem = reg_a
+    #     while(rem != 0):
+    #         res = rem % self._gamma_reg
+    #         expansion.append(res)
+    #         print("divving")
+    #         rem = rem // self._gamma_reg
+    #         print("divved")
+    #     print("returning")
+    #     print(expansion)
+    #     const = expansion[0]
+    #     expansion[0] = self.reg().zero()
+    #     result = self.reg()(expansion) + const
+    #     print("almost")
+    #     return result
+
+    """
+    Compute the coefficients of the gamma-adic expansion
+    This should only work
+    """
+    def gamma_adic(self, a):
+        reg_a = self.reg()(get_coeffs(a))
+        if reg_a == self.reg().zero() or reg_a.degree() < self._gamma_reg.degree():
+            return reg_a
+        expansion = []
+        rem = reg_a
+        while(rem != 0):
+            res = rem % self._gamma_reg
+            expansion.append(res)
+            print("divving")
+            rem = rem // self._gamma_reg
+            print("divved")
+        print("returning")
+        print(expansion)
+        const = expansion[0]
+        expansion[0] = self.reg().zero()
+        result = self.reg()(expansion) + const
+        print("almost")
+        return result
+            # sdeg = rem.degree() / self._gamma_reg.degree()
+            # modu = (self._gamma_reg)^sdeg
+            # quo = rem / self._gamma_reg
+            # rem = quo*(self._gamma_)
+
+
+
+
+    """
+    Compute the reverse map from L to F_{\frak{p}} when they are equal
+    """
+    def gamma_inv(self, a):
+        # print("gammai")
+        # print(self._gamma_x_inv)
+        # print(a)
+        # print("testing")
+        #ap = self._context.to_reg(a)
+        #return ap % self._context.to_reg(self._gamma_x^2)
+        res = sum([coeff*self._gamma_x_inv**i for i, coeff in enumerate(get_coeffs(a))])
+
+        # print(res)
+        return res
+
+
 
 
     """
@@ -263,9 +358,17 @@ class DrinfeldModule():
     Given a member \a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
     defined by x |--> self.gen().
     """
-    def _map(self, a):
-        if not (parent(a) is self.reg()):
-            raise TypeError(f'{a} is not a valid regular function in the domain.')
+    def _map(self, ap):
+        a = ap
+        # if isinstance(ap, int):
+        #     return ap
+        if not (a.parent() is self.reg()):
+            coeffs = get_coeffs(a)
+            if coeffs != None:
+                a = self.reg()(coeffs)
+            else:
+                raise ValueError("Value {a} can't be interpreted as a polynomial expression.")
+
             # Expand the matrix of powers of \phi_x if degree of a is too large
         if a.degree() >= len(self._phi_x_matrix): self._phi_x_v2(a.degree())
         im = self.ore_ring().zero()
@@ -314,6 +417,9 @@ class DrinfeldModule():
     Given either an element of self.reg() or a skew polynomial and an element of L
     Compute its image under the Drinfeld Module action.
 
+    if a in A and b in L then this computes \phi_a(b)
+    if a is a skew polynomial, this computes a(b)
+
     Technically should check if poly is actually in \phi(A). This could be done by
     inverting poly but that is quite costly so probably won't do that. Will likely
     just check degrees.
@@ -343,6 +449,12 @@ class DrinfeldModule():
     """
     Getters for Context properties and methods
     """
+    def n(self):
+        return self._context._n
+
+    def modulus(self):
+        return self._context._modulus
+
     def rank(self):
         return self._rank
 
@@ -351,6 +463,9 @@ class DrinfeldModule():
 
     def L(self):
         return self._context._L
+
+    def prime_field(self):
+        return self._prime_field
 
     def reg(self):
         return self._context._reg
@@ -368,6 +483,9 @@ class DrinfeldModule():
     """
     def raw_im(self, ac):
         return sum([self.gen()^(i) *ac[i] for i in range(len(ac)) ])
+
+    def frob_norm(self):
+        return (-1)**((self._rank % 2) + (self.n() % 2)*((self._rank + 1) % 2 ))*(1/self[self._rank].norm())*(self._a_char)**(self.n()/self._m)
 
 
 
@@ -417,6 +535,7 @@ Under this identification, many computations on H_dR can be realized using algor
 
 """
 
+
 class DrinfeldCohomology_dR(Parent):
     def __init__(self, dm):
         # The associated Drinfeld Module
@@ -437,6 +556,99 @@ class DrinfeldCohomology_dR(Parent):
         """
         self._basis_rep = identity_matrix(self.L(), self._dim)
 
+    """
+    An implementation of the matrix method for solving linearly recurrent sequence
+
+    Given the cohomology space, compute the canonical basis representation of \eta_x = \tau^deg
+
+    """
+
+    def rec_mat_meth(self, deg):
+        r = self._dim
+        k_0, k = self._basis_rep.nrows() - r, deg - r
+        k_rel = k - k_0
+        sstar = ceil(sqrt(k_rel))
+        s0, s1 = k_rel % sstar, k_rel // sstar
+        rec_matr = matrix(self.L(), r, r)
+        rec_coeff = [ self.L()(-1)*self.dm()[r - i]/self.dm()[r] for i in range(1, r + 1) ]
+
+        coeff_ring = PolynomialRing(self.L(), 'V')
+
+        # The initial matrices
+        matr0 = [self.init_matr(rec_coeff, i, self.L()) for i in range(s0, 0, -1)]
+        # The polynomial matrices
+        matry = [self.init_matr(rec_coeff, i, coeff_ring, True) for i in range(sstar + s0, s0, -1)]
+
+        # print(f's0: {s0} | s1: {s1} | sstar: {sstar}')
+
+        # See notation from my presentations
+        c0 = prod(matr0)
+        cy = prod(matry)
+        matrs = [matrix(cy) for i in range(s1 - 1, -1, -1)]
+        eval_matrs = [matrs[i].apply_map(lambda a: coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar))) for i in range(s1 -1, -1, -1)]
+        power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: self.fast_skew(a, i*sstar)) for i in range(s1 -1, -1, -1)]
+        start = self._basis_rep.matrix_from_rows_and_columns(range(self._basis_rep.nrows() - r, self._basis_rep.nrows()), range(r))
+        return prod(power_eval_matrs)*c0*start
+
+    def char_poly(self):
+        cpolyring = PolynomialRing(self.dm().reg(), 'X')
+        # sometimes have to conver to the gamma adic representation
+        return sum([self.dm().gamma_adic(self.dm()._context.to_reg(coeff))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    # def char_poly(self):
+    #     cpolyring = PolynomialRing(self.dm().L(), 'X')
+    #     # sometimes have to conver to the gamma adic representation
+    #     return sum([ self.dm().gamma_adic(self.dm()._context.to_reg(coeff))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    def char_poly_v2(self):
+        cpolyring = PolynomialRing(self.dm().reg(), 'X')
+        return sum([self.dm()._context.to_reg(coeff)*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    def char_poly_v0(self):
+        cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
+        # sometimes have to conver to the gamma adic representation
+        return sum([ self.dm().gamma_inv(self.dm()._context.to_reg(coeff))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    def char_poly_v3(self):
+        cpolyring = PolynomialRing(self.dm().reg(), 'X')
+        # sometimes have to conver to the gamma adic representation
+        return sum([ self.dm().gamma_adic(self.dm()._context.to_reg(self.dm().gamma_inv(self.dm()._context.to_reg(coeff))))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    def char_poly_v4(self):
+        cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
+        # sometimes have to conver to the gamma adic representation
+        return sum([self.dm().gamma_inv(self.dm().gamma_adic(self.dm()._context.to_reg(coeff)))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    # def char_poly_v3(self):
+    #     cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
+    #     # sometimes have to conver to the gamma adic representation
+    #     return sum([ self.dm().gamma_inv(self.dm().gamma_adic(self.dm()._context.to_reg(coeff)))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+    #
+    # # def char_poly_v4(self):
+    # #     cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
+    # #     # sometimes have to conver to the gamma adic representation
+    # #     return sum([ self.dm().gamma_inv(self.dm()._context.to_reg(coeff))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    """
+    Initialize matrix for use in the recurrence method.
+    """
+    def init_matr(self, coeffs, k, ring, usepoly = False):
+        r = self._dim
+        matr = matrix(ring, r, r)
+        for i in range(r):
+            matr[0, i] = self.fast_skew(coeffs[i], k)
+        for i in range(r-1):
+            matr[i + 1, i] = 1
+        if usepoly:
+            # print(f"coeff of gen: {(1/(self.fast_skew(self.dm()[r], k)))} | gen: {ring.gen()} | k: {k} | lead: {self.dm()[r]}")
+            matr[0, r-1] += (1/(self.fast_skew(self.dm()[r], k)))*ring.gen()
+        else:
+            matr[0, r-1] += self.dm()[0]/(self.fast_skew(self.dm()[r], k))
+
+        # print(f'init order {k}')
+        # print(matr)
+        return matr
+
 
 
     """
@@ -451,6 +663,8 @@ class DrinfeldCohomology_dR(Parent):
     def L(self):
         return self.dm().L()
 
+    def fast_skew(self, a, iters = 1):
+        return self.dm()._context._fast_skew_v2(a, iters)
 
 
 class DrinfeldCohomology_Crys(Parent):
@@ -462,26 +676,13 @@ class DrinfeldCohomology_Crys(Parent):
         return self._dm
 
 
-"""
-An implementation of the matrix method for solving linearly recurrent sequence
-
-Given the cohomology space, compute the canonical basis representation of \eta_x = \tau^deg
-
-"""
-
-def rec_mat_meth(cohom, deg):
-    r = cohom._dim
-    k_0, k, k_rel = cohom._basis_rep.nrows() - r, deg - r, k - k_0
-    sstar, s0, s1 = ceil(sqrt(k_rel)), k_rel % sstar, k_rel // sstar
-    rec_matr = matrix(cohom.L(), r, r)
-    rec_vec = [ cohom.dm()[r - i]/cohom.dm()[r] for i in range(1, r) ]
-    matrs = [  ]
-
-    # Start the computations using the last r powers computed.
-    start = cohom._basis_rep.matrix_from_rows_and_columns(range(cohom._basis_rep.nrows() - r, cohom._basis_rep.nrows()), range(r))
 
 
+def check_char(dm, cp, frob_norm = 1):
+    return sum([dm(cp[i])*dm.ore_ring().gen()**(dm.n()*i) for i in range(cp.degree() + 1)]) + frob_norm*dm(dm.frob_norm())
 
+def check_char_gamma(dm, cp, frob_norm = 1):
+    return sum([dm(dm.gamma(dm._context.to_reg(cp[i])))*dm.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + frob_norm*dm(dm.frob_norm())
 
 
 """
@@ -490,13 +691,15 @@ Tests
 test_base = True
 
 if test_base:
+    nn = 4
+    rr = 3
     F = GF(8)
     Fp = PolynomialRing(F, 'y')
-    ip = Fp.irreducible_element(4)
+    ip = Fp.irreducible_element(nn)
     LL = F.extension(ip)
     con = DMContext(F, LL)
 
-    sp = con._ore_ring.random_element(5)
+    sp = con._ore_ring.random_element(rr)
 
     spp = sp.coefficients()
     spp[0] = LL('y')
@@ -571,3 +774,47 @@ if test_base:
     print(eva2 - eva)
 
     drham = DrinfeldCohomology_dR(dm5)
+    print("char poly time")
+    io = drham.rec_mat_meth(nn + rr)
+    print("old time char poly")
+    chario = drham.char_poly_v2()
+    print(chario)
+    print("computing char poly")
+    cp = drham.char_poly() #io.charpoly()
+    opp = drham.char_poly_v0() #io.charpoly()
+
+    cp_v3 = drham.char_poly_v3() #io.charpoly()
+    cp_v4 = drham.char_poly_v4() #io.charpoly()
+    print("done char poly")
+    print(io.charpoly())
+    print(cp)
+    print("verification (this should be 0):")
+    resultant = check_char(dm5, cp) #sum([dm5(cp[i])*dm5.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + dm5(dm5.frob_norm())
+    print(resultant)
+    cp2 = io.charpoly()
+    sc = dm5._context.to_reg(cp2.coefficients(sparse=False)[1])
+    gx = dm5._context.to_reg(dm5._gamma_x)
+    achar = dm5._context.to_reg(dm5._a_char)
+    print("ono")
+    print(opp)
+    print("verification of inverse gamma map (this should be 0):")
+    opres = check_char(dm5, opp) #sum([dm5(cp[i])*dm5.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + dm5(dm5.frob_norm())
+    print(opres)
+    #roo = dm5._context.to_reg(dm5._gamma_x_inv)
+
+    print("final stand")
+    
+    hero_v3 = check_char(dm5, cp_v3)
+    hero_v4 = check_char(dm5, cp_v4)
+    print(hero_v3)
+    print(hero_v4)
+
+    boogie = cp
+    arrith = get_coeffs(boogie)
+    arrith[1] = get_coeffs(opp)[1]
+    print("aryth")
+    print(arrith)
+    kek = dm5.reg()(arrith)
+    print(kek)
+    print("lets go")
+    print(check__char(dm5, kek))
