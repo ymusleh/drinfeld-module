@@ -379,6 +379,9 @@ class DrinfeldModule():
     """
     Getters for Context properties and methods
     """
+    def q(self):
+        return self.base().order()
+
     def n(self):
         return self._context._n
 
@@ -517,8 +520,9 @@ class DrinfeldCohomology_dR(Parent):
         c0 = prod(matr0)
         cy = prod(matry)
         matrs = [matrix(cy) for i in range(s1 - 1, -1, -1)]
-        eval_matrs = [matrs[i].apply_map(lambda a: coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar))) for i in range(s1 -1, -1, -1)]
-        power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: self.fast_skew(a, i*sstar)) for i in range(s1 -1, -1, -1)]
+        # eval_matrs = [matrs[i].apply_map(lambda a: coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar))) for i in range(s1 -1, -1, -1)]
+        # power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: self.fast_skew(a, i*sstar)) for i in range(s1 -1, -1, -1)]
+        power_eval_matrs = [matrs[i].apply_map(lambda a: self.fast_skew(coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar)), i*sstar)) for i in range(s1 -1, -1, -1)]
         start = self._basis_rep.matrix_from_rows_and_columns(range(self._basis_rep.nrows() - r, self._basis_rep.nrows()), range(r))
         return prod(power_eval_matrs)*c0*start
 
