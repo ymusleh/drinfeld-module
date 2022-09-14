@@ -883,6 +883,9 @@ def crys_convert(poly, dm, var = 'X'):
     PP = PolynomialRing(dm.reg(), 'X')
     gamma_t = dm[0]
     coeffs = get_coeffs(poly)
+    print("crys")
+    print(coeffs)
+    print(get_coeffs(coeffs[-2]))
     ss = sum([ dm.to_reg(get_eval(coeff, gamma_t))*PP.gen()**i for i, coeff in enumerate(coeffs) ])
     return ss
 
@@ -954,7 +957,8 @@ force_interm = True
 
 if base_test:
     nn = 6
-    rr = 4
+    rr = 3
+    mm = 2
     F = GF(4, 'c')
     Fp = PolynomialRing(F, 'y')
     ip = Fp.irreducible_element(nn)
@@ -966,11 +970,12 @@ if base_test:
 
     sp = con._ore_ring.random_element(rr)
     spn = sp.coefficients(sparse=False)
-    # if force_interm:
-    #     cons_term = LL.random_element()
-    #     while cons_term.minimal_polynomial().degree() >= nn:
-    #         cons_term = LL.random_element()
-    #     spn[0] = cons_term
+    if force_interm:
+        min_po = Fp.random_element(mm)
+        ro = min_po.roots(LL)
+        while len(ro) == 0:
+            min_po = Fp.random_element(mm)
+        spn[0] = ro[0][0]
 
     print(f'Skew polynomial generator defining the dm: {sp} ')
     dm5 = DrinfeldModule(spn, con)
@@ -981,9 +986,10 @@ if base_test:
     print(chario)
     #print("computing char poly")
     cp = drham.char_poly() #io.charpoly()
+    print("h1")
     opp = drham.char_poly_v0() #io.charpoly()
-
-    cp_v3 = drham.char_poly_v3() #io.charpoly()
+    print("h2")
+    #cp_v3 = drham.char_poly_v3() #io.charpoly()
     #cp_v4 = drham.char_poly_v4() #io.charpoly()
     # print("done char poly")
     #print(io.charpoly())
@@ -991,15 +997,6 @@ if base_test:
     print("verification (this should be 0):")
     resultant = check_char(dm5, cp) #sum([dm5(cp[i])*dm5.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + dm5(dm5.frob_norm())
     print(resultant)
-    # cp2 = io.charpoly()
-    # sc = dm5._context.to_reg(cp2.coefficients(sparse=False)[1])
-    # gx = dm5._context.to_reg(dm5._gamma_x)
-    # achar = dm5._context.to_reg(dm5._a_char)
-    # print("ono")
-    # print(opp)
-    print("verification of inverse gamma map (this should be 0):")
-    opres = check_char(dm5, opp) #sum([dm5(cp[i])*dm5.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + dm5(dm5.frob_norm())
-    print(opres)
     print("now testing all roots")
     root_ims = drham.char_poly_roots()
     for root in root_ims:
@@ -1047,14 +1044,14 @@ if base_test:
     print(get_eval(cfer[1], gamma_t))
     print(get_eval(cfer[2], gamma_t))
     print("crys convert")
-    #crys_con = crys_convert(crys_char_poly, dm5) #+ dm5.frob_norm()
+    crys_con = crys_convert(crys_char_poly, dm5) #+ dm5.frob_norm()
     print("cryscon2")
     crys_con2 = crys_convert2(crys_char_poly, dm5, KK, Q)
     print("crysses")
-    #print(crys_con)
+    print(crys_con)
     print(crys_con2)
     print("check (should be 0)")
-    print(check_char(dm5, crys_con))
+    #print(check_char(dm5, crys_con))
     print("check crys con 2 (should be 0)")
     char_res = check_char(dm5, crys_con2)
     print(char_res)
@@ -1062,7 +1059,7 @@ if base_test:
     # print(check_char0(dm5, crys_con2))
 
     left = char_res.coefficients() #char_res/(dm5.ore_ring().gen()**nn)
-    re23 = iinverse(dm5, left, len(left) - 1)
+    #re23 = iinverse(dm5, left, len(left) - 1)
 
 
 
