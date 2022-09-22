@@ -1046,26 +1046,30 @@ if base_test:
     base_mod = x^2 + x + 1
     if randomize:
         F = GF(qq, 'c')
+        print(f"base field modulus: {F.modulus()}")
     else:
         F = GF(qq, name='c', modulus = base_mod)
-    cc = F.gen()
+    c, cc = F.gen(), F.gen()
     Fp = PolynomialRing(F, 'y')
-    yy = Fp.gen()
-    ext_mod = yy^6 + yy^3 + (cc + 1)*(yy^2) + yy + 1 # modulus for extension (L)
+    y, yy = Fp.gen(), Fp.gen()
+
+    ext_mod = y^6 + (c + 1)*y^4 + y^3 + (c + 1)*y^2 + c*y + 1  #yy^6 + yy^3 + (cc + 1)*(yy^2) + yy + 1 # modulus for extension (L)
 
     if randomize:
         ip = Fp.irreducible_element(nn)
+        print(f"extension modulus: {ip}")
     else:
         ip = ext_mod
     LL = F.extension(ip, 'y')
     con = DMContext(F, LL)
     print(f'Base Field: {F}')
     print(f'Extension: {LL}')
-    tau = con._ore_ring.gen()
+    tau, t = con._ore_ring.gen(), con._ore_ring.gen()
     if randomize:
         sp = con._ore_ring.random_element(rr)
+        print(f"sp: {sp}")
     else:
-        sp =tau^3 + (yy^2 + yy + 1)*tau^2 + tau + (yy^2 + 1)
+        sp = (c*y^5 + (c + 1)*y^4 + (c + 1)*y + 1)*t^3 + (y^5 + (c + 1)*y^4 + (c + 1)*y)*t^2 + ((c + 1)*y^5 + y^4 + c*y^3 + c*y^2 + c*y + 1)*t + y^5 + c*y^4 #tau^3 + (yy^2 + yy + 1)*tau^2 + tau + (yy^2 + 1)
     spn = sp.coefficients(sparse=False)
     if force_interm:
         min_po = Fp.random_element(mm)
@@ -1073,8 +1077,9 @@ if base_test:
         while len(ro) == 0:
             min_po = Fp.random_element(mm)
         spn[0] = ro[0][0]
+    #spn[0] = y
 
-    print(f'Skew polynomial generator defining the dm: {sp} ')
+    print(f'Skew polynomial generator defining the dm: {spn} ')
     dm5 = DrinfeldModule(spn, con)
     drham = DrinfeldCohomology_dR(dm5)
     #io = drham.rec_mat_meth(nn + rr)
@@ -1116,9 +1121,10 @@ if base_test:
     KK.<TT, tt> = PolynomialRing(dm5.L(), 2, order='lex')
     #mip = get_eval(dm5.L().modulus(), tt)
     mip = get_eval(dm5._a_char, tt)
-    h = 3 # precision
+    h = dm5.n()//dm5._a_char.degree() # precision
     print("creating multi-ideal")
     ih = KK((TT - dm5[0])**h)
+    print("tt")
     II = Ideal([KK(mip**h), KK(ih)])
     # II = Ideal([gamma_t.minimal_polynomial(tt), (TT - tt)**2])
     print("taking quo")
