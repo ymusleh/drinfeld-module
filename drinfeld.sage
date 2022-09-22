@@ -47,6 +47,12 @@ def raw_frob(elem, oexp, q, n):
     true = oexp % n
     return elem**(q**true)
 
+def check_inv(gt, rt):
+    print(f"checking root: {rt}")
+    res = get_eval(gt, rt)
+    print(f"result: {res}")
+
+
 class DMContext():
     """
     A DMContext stores information about the underlying algebraic structures of a finite
@@ -93,6 +99,7 @@ class DMContext():
         #if isinstance(L, Field) and L.is_finite():
         # for now I'll create L
 
+
         if isinstance(L, Integer) or isinstance(L, int):
             Lp = PolynomialRing(self._base, lvar)
             self._L = self._base.extension(Lp.irreducible_element(L), lvar)
@@ -110,6 +117,7 @@ class DMContext():
             self._n = L.modulus().degree()
         else:
             raise TypeError("Can't construct the extension field with the data given.")
+
 
         self._modulus = self._L.modulus()
 
@@ -229,6 +237,7 @@ class DrinfeldModule():
         else:
             self._context = context
 
+        #print("phase 1")
         if skew_gen:
             if parent(ore) is self.ore_ring():
                 self._gen = ore
@@ -239,6 +248,7 @@ class DrinfeldModule():
             for i, coeff in enumerate(ore):
                 self._gen += self.L()(coeff)*self.ore_ring().gen()^i
 
+        #print("phase 2")
 
         self._rank = self._gen.degree()
         '''
@@ -251,20 +261,26 @@ class DrinfeldModule():
         The A-characteristic \frak{p} is therefore the minimal polynomial of \gamma(x)
         """
         self._gamma_x = self.gen().coefficients(sparse=False)[0] # image of x is the constant term
+
+        #print("phase 3")
+
         self._a_char = self._gamma_x.minpoly()
         self._m = self._a_char.degree()
         self._prime_field = self.base().extension(self._a_char, 'j')
         self._gamma_reg = self._context.to_reg(self._gamma_x)
-        #print("rooting")
         troots = self.modulus().roots(self.prime_field())
         #print("done rooting")
         self.roots = []
         for root in troots:
             self.roots.append(root[0])
+        #print(self.roots)
         if self.roots == None or len(self.roots) == 0:
             self._gamma_x_inv = self.reg().gen()
         else:
-            self._gamma_x_inv = self.roots[0][0]
+            self._gamma_x_inv = self.roots[0]
+        print("phase 5")
+        for rt in self.roots:
+            check_inv(self._gamma_x, rt)
 
 
 
@@ -280,7 +296,7 @@ class DrinfeldModule():
     """
     def __getitem__(self, i):
         if isinstance(i, int) or isinstance(i, Integer) and i <= self.rank() and i >= 0:
-            return self.gen().coefficients()[i]
+            return self.gen().coefficients(sparse=False)[i]
         else:
             raise ValueError("Invalid subscript access for drinfeld module.")
 
@@ -453,6 +469,66 @@ class DrinfeldModule():
         else:
             raise TypeError(f"{poly} is not a valid polynomial in the domain or codomain of the Drinfeld Module")
 
+    """
+    Finds the characteristic polynomial by solving for a degree r polynomial for which the Frobenius element is a root.
+
+    That is, we solve for a_i = \sum_{j=0}^{n(r - i)/r} a_{i,j}T^j such that
+
+    \tau^n + \phi_{a_{r-1}} \tau^{n(r-1)} + \ldots + \phi_{a_1} \tau^n + \phi_{a_0} = 0
+
+    Requires computing \phi_T^i for i up to O(n)
+    """
+    def char_poly_gek(self):
+        tring = self.reg() #PolynomialRing(self.L(), 'k')
+        x = tring.gen()
+        self._phi_x_v2(self.n())
+        """
+        Setting up the matrix
+
+        ith row corresponds to the contribution to the degree i skew term coefficients
+        from all sources; nr + 1 rows overall
+
+        We will likely precompute the frobenius norm using the closed form formula
+
+        The variable vector is [a_{1,0}, a_{1,1}, \ldots, a_{r-1, n/r}]^T
+
+        """
+        # For now code it to find the constant term as well
+        r = self.rank()
+        n = self.n()
+        nrow = self.n()*self.rank() + 1
+        degs = [ (self.n()*(self.rank() - j))//self.rank() for j in range(r) ]
+        shifts = [degs[i] + 1 for i in range(len(degs))]
+        deg_off = [0] + [ sum(shifts[:i]) for i in range(1,r) ]
+        ncol = sum(degs) + r
+        sys = matrix(self.L(), nrow, ncol)
+        rhs = vector(self.L(), nrow)
+        rhs[nrow - 1] = -1
+        #for i in range(nrow):
+            # For columns we split the iteration to iterate over the a_j and then over the individual degree
+            # coefficients a_{jk}
+        for j in range(r):
+            for k in range(shifts[j]):
+                # Assuming the rows contain the coefficients of \phi_x^i, should double check
+                ims = self._phi_x_matrix[k]
+                for i in range(len(ims)):
+                    # may need to fix the column index offset to account for constant terms
+                    sys[i + n*j, deg_off[j] + k] = ims[i]
+
+        sol = sys.solve_right(rhs)
+        coeffs = []
+        for i in range(r):
+            poly = 0
+            for j in range(shifts[i]):
+                poly += self.to_base(sol[deg_off[i] + j])*x**j
+            coeffs.append(poly)
+        return coeffs
+
+
+
+
+
+
 
 
 
@@ -605,7 +681,6 @@ class DrinfeldCohomology_dR(Parent):
         rec_coeff = [ self.L()(-1)*self.dm()[r - i]/self.dm()[r] for i in range(1, r + 1) ]
 
         coeff_ring = PolynomialRing(self.L(), 'V')
-
         # The initial matrices
         matr0 = [self.init_matr(rec_coeff, i, self.L()) for i in range(s0, 0, -1)]
         # The polynomial matrices
@@ -849,6 +924,9 @@ def check_char(dm, cp, frob_norm = 1):
 def check_char_gamma(dm, cp, frob_norm = 1):
     return sum([dm(dm.gamma(dm._context.to_reg(cp[i])))*dm.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + frob_norm*dm(dm.frob_norm())
 
+def check_char_gek(dm, cp):
+    return sum([dm(cp[i])*dm.ore_ring().gen()**(nn*i) for i in range(len(cp))]) + dm.ore_ring().gen()**(dm.n()*dm.rank())
+
 
 
 def double_replace(multi, c1, c2):
@@ -953,22 +1031,41 @@ def iinverse(dm, a, deg):
 
 base_test = True
 extra_test = False
-force_interm = True
+force_interm = False
+randomize = False
+# set_base_mod = True
+# set_ext_mod = True
+
+base_mod = x^2 + x + 1
 
 if base_test:
+    qq = 4
     nn = 6
     rr = 3
     mm = 2
-    F = GF(4, 'c')
+    base_mod = x^2 + x + 1
+    if randomize:
+        F = GF(qq, 'c')
+    else:
+        F = GF(qq, name='c', modulus = base_mod)
+    cc = F.gen()
     Fp = PolynomialRing(F, 'y')
-    ip = Fp.irreducible_element(nn)
+    yy = Fp.gen()
+    ext_mod = yy^6 + yy^3 + (cc + 1)*(yy^2) + yy + 1 # modulus for extension (L)
+
+    if randomize:
+        ip = Fp.irreducible_element(nn)
+    else:
+        ip = ext_mod
     LL = F.extension(ip, 'y')
     con = DMContext(F, LL)
     print(f'Base Field: {F}')
     print(f'Extension: {LL}')
-
-
-    sp = con._ore_ring.random_element(rr)
+    tau = con._ore_ring.gen()
+    if randomize:
+        sp = con._ore_ring.random_element(rr)
+    else:
+        sp =tau^3 + (yy^2 + yy + 1)*tau^2 + tau + (yy^2 + 1)
     spn = sp.coefficients(sparse=False)
     if force_interm:
         min_po = Fp.random_element(mm)
@@ -1019,10 +1116,10 @@ if base_test:
     KK.<TT, tt> = PolynomialRing(dm5.L(), 2, order='lex')
     #mip = get_eval(dm5.L().modulus(), tt)
     mip = get_eval(dm5._a_char, tt)
-    h = 4 # precision
+    h = 3 # precision
     print("creating multi-ideal")
-    ih = KK((TT - tt)**h)
-    II = Ideal([KK(mip), KK(ih)])
+    ih = KK((TT - dm5[0])**h)
+    II = Ideal([KK(mip**h), KK(ih)])
     # II = Ideal([gamma_t.minimal_polynomial(tt), (TT - tt)**2])
     print("taking quo")
     Q = KK.quo(II)
@@ -1060,7 +1157,11 @@ if base_test:
 
     left = char_res.coefficients() #char_res/(dm5.ore_ring().gen()**nn)
     #re23 = iinverse(dm5, left, len(left) - 1)
-
+    print("gekeler")
+    cp_gek = dm5.char_poly_gek()
+    print(cp_gek)
+    print("checking gekeler algorithm (should be 0)")
+    print(check_char_gek(dm5, cp_gek))
 
 
     #cpou1 = cc1.lift().subs(tt = gamma_t) # get the underlying polynomial
