@@ -1285,7 +1285,7 @@ if base_test:
     # #res2 = double_replace(cfer[2], TT, tt)
     # cc3 = Q(res3)
     # print(f"f quo: {cc3}")
-    print("testing "slow" recurrence method")
+    print("testing slow recurrence method")
     cp_slow = crys_cohom.slow_rec()
     print(cp_slow)
     # r = dm5._rank
