@@ -839,6 +839,8 @@ class DrinfeldCohomology_Crys(Parent):
         # over providing a framework for algebraic computation
         self._init_category_(VectorSpaces(self.L()))
         self._basis_rep = identity_matrix(self.L(), self._dim)
+        self.precision = self._dm.n()/self._dm.m()
+        self.AL = PolynomialRing(self._dm.L(), 'w')
 
     def dm(self):
         return self._dm
@@ -865,6 +867,112 @@ class DrinfeldCohomology_Crys(Parent):
         return matr
 
     """
+    Methods for computing representations of elements of the Crystalline cohomology
+
+    Recall the the Crystalline Cohomology is a free module of rank r
+
+    """
+     # This does one round of long division by T - \gamma_T using the module action
+     # It does this by computing a solution to the linear system S = R + (T - \gamma_T)*Q
+     # Given S = a_i\tau^{i} +
+     # This version uses the module action given in Angles
+    def div_reduction(self, S):
+        if parent(S) == self.dm().ore_ring():
+            S = get_coeffs(S)
+        kd = len(S)
+        r = self._dm.rank()
+        L = self._dm.L()
+        q = self._dm.q()
+        matr = matrix(L, kd, kd)
+        vec = matrix(L, kd, 1)
+        for i in range(kd):
+            vec[i, 0] = L(S[i])
+        for i in range(r):
+            matr[i, i] = 1
+        for i in range(kd-r):
+            for j in range(r+1):
+                matr[i + j, r + i] += self._dm[j]^(q^(i + 1))
+        for i in range(kd - self._dim):
+            matr[i, r + i] -= self._dm[0] #L(t)
+        return matr.solve_right(vec)
+
+    def full_reduction(self, S):
+        mdeg = len(S)
+        r = self._dm.rank()
+        rep = []
+        if mdeg <= r:
+            rep.append(S)
+            return rep
+        S_p = S
+        while(mdeg > r):
+            rem = self.div_reduction(S_p)
+            rem1 = [rem[i, 0] for i in range(r)]
+            quo = [rem[i, 0] for i in range(r, mdeg)]
+            rep.append(rem1)
+            S_p = quo
+            mdeg = mdeg - r
+        return rep
+
+    # find the coefficients of \tau^k in terms of the size r basis for H_{crys} over A_L
+    def basis_rep(self, k):
+        r = self._dm.rank()
+        S = [0 for i in range(k)]
+        S[k-1] = 1
+        AL = self.AL
+        rets = [AL(0) for i in range(r)]
+        reps = self.full_reduction(S)
+        # I need to understand how the truncation works: till unclear, for now its 0 because it works. But why? In theory I
+        # should get the right answer no matter how I truncate
+        # in theory: evaluate at any precision and set w = \gamma_T = t
+        # Update: this does seem to work at any precision. Just need to evaluate at w = t i.e. mod (w - \gamma_T)
+        # Next Step: what is the generalization of this for the non-prime field case?
+        trunc = self.precision
+        w = self.AL.gen()
+        for i in range(min(trunc + 1, len(reps))):
+            for j in range(len(reps[i])):
+                rets[j] += reps[i][j]*((w - self._dm[0])**i)
+        return rets
+
+    def compute_charpoly_ILadic(self):
+        r = self._dm._rank
+        n = self._dm.n()
+        matr = []
+        for i in range(r):
+            brep = self.basis_rep(n + i + 1)
+            matr.append(brep)
+            # print(f'brp: {n+i+1}')
+            # print(brep)
+            #matr.append(derham_force(drm, n + i + 1))
+        smat = matrix(self.AL, matr)
+        #print("ILadic matrix")
+        #print(smat)
+        #print("------------------------------")
+        return smat.charpoly('Z')
+
+    def slow_rec(self):
+        r = self._dm.rank()
+        X = self.AL.gen()
+        n = self._dm.n()
+        state = [[0 if i != r - 1 - j else 1 for i in range(r)] for j in range(r)]
+        #state = state[::-1]
+        ub =  n + 1
+        for k in range(1, ub):
+            ri = len(state)
+            invr = self._dm._context._fast_skew(self._dm[r], k)
+            charqk = self._dm._context._fast_skew(self._dm[0], k)
+            cfs = [sum([ self._dm._context._fast_skew(self._dm[r - i]/self._dm[r], k )*(-1)*state[ri - i][z] for i in range(1, r)] ) + (1/invr)*(X - charqk)*state[ri - r][z]  for z in range(r)]
+            state.append(cfs)
+        finmatr = []
+        for i in range(r):
+            finmatr.append(state.pop())
+        smat = matrix(self.AL, finmatr)
+        return smat.charpoly('Z')
+
+
+
+
+
+    """
     An implementation of the matrix method for solving linearly recurrent sequence
 
     Given the cohomology space, compute the canonical basis representation of \eta_x = \tau^deg
@@ -882,7 +990,7 @@ class DrinfeldCohomology_Crys(Parent):
         n = self.dm().n()
         q = self.dm().q()
 
-        precision = self.dm().n()
+        precision = self.dm().n() / self.dm()._a_char.degree()
 
         c_ring = PolynomialRing(self.L(), 'V')
         ideal = c_ring.gen() - self.dm()[0]
@@ -1119,17 +1227,18 @@ if base_test:
 
     print("building new ring")
     KK.<TT, tt> = PolynomialRing(dm5.L(), 2, order='lex')
-    #mip = get_eval(dm5.L().modulus(), tt)
-    mip = get_eval(dm5._a_char, tt)
+    mip = get_eval(dm5.L().modulus(), tt)
+    #mip = get_eval(dm5._a_char, tt)
     h = dm5.n()//dm5._a_char.degree() # precision
     print("creating multi-ideal")
     ih = KK((TT - dm5[0])**h)
     print("tt")
-    II = Ideal([KK(mip**h), KK(ih)])
+    II = Ideal([KK(mip), KK(ih)])
     # II = Ideal([gamma_t.minimal_polynomial(tt), (TT - tt)**2])
     print("taking quo")
-    Q = KK.quo(II)
     II.groebner_basis()
+    Q = KK.quo(II)
+
     print("coeffs (this is the good stuff, need to extract these to get char poly, particularly cc1/cc2)")
     res1 = double_replace(cfer[1], TT, tt)
     res2 = double_replace(cfer[2], TT, tt)
@@ -1168,7 +1277,27 @@ if base_test:
     print(cp_gek)
     print("checking gekeler algorithm (should be 0)")
     print(check_char_gek(dm5, cp_gek))
-
+    print("testing factorization by (T - \gamma_T)")
+    cp_direct = crys_cohom.compute_charpoly_ILadic()
+    print(cp_direct)
+    cdirect = get_coeffs(cp_direct)
+    # print(cdirect[1]
+    #RF.<TT, tt> = PolynomialRing(dm5.L(), 2, order='lex')
+    # res3 = double_replace(cdirect[1], TT, tt)
+    # #res2 = double_replace(cfer[2], TT, tt)
+    # cc3 = Q(res3)
+    # print(f"f quo: {cc3}")
+    print("testing slow recurrence")
+    cp_slow = crys_cohom.slow_rec()
+    print(cp_slow)
+    # r = dm5._rank
+    # print("testing basis rep")
+    # print(crys_cohom.basis_rep(r))
+    # print("nxt")
+    # print(crys_cohom.basis_rep(r + 1))
+    # cslow = get_coeffs(cp_slow)
+    # res4 = double_replace(cslow[1], TT, tt)
+    #cc4 = Q(res4)
 
     #cpou1 = cc1.lift().subs(tt = gamma_t) # get the underlying polynomial
 
