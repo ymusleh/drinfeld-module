@@ -954,9 +954,7 @@ class DrinfeldCohomology_Crys(Parent):
         X = self.AL.gen()
         n = self._dm.n()
         state = [[0 if i != r - 1 - j else 1 for i in range(r)] for j in range(r)]
-        #state = state[::-1]
-        ub =  n + 1
-        for k in range(1, ub):
+        for k in range(1, n + 1):
             ri = len(state)
             invr = self._dm._context._fast_skew(self._dm[r], k)
             charqk = self._dm._context._fast_skew(self._dm[0], k)
@@ -1287,7 +1285,7 @@ if base_test:
     # #res2 = double_replace(cfer[2], TT, tt)
     # cc3 = Q(res3)
     # print(f"f quo: {cc3}")
-    print("testing slow recurrence")
+    print("testing "slow" recurrence method")
     cp_slow = crys_cohom.slow_rec()
     print(cp_slow)
     # r = dm5._rank
