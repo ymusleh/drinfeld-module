@@ -43,8 +43,16 @@ def get_eval(poly_obj, elem):
     coeffs = get_coeffs(poly_obj)
     return sum([ coeff*elem**i for i, coeff in enumerate(coeffs) ])
 
-def raw_frob(elem, oexp, q, n):
+def c_frob(elem, oexp, q, n, gr):
     true = oexp % n
+    cfs = get_coeffs(elem)
+    ret = 0
+    for i, cf in enumerate(cfs):
+        ret += (cf**(q**true))*gr**i
+    return ret
+
+def raw_frob(elem, oexp, q, n):
+    true = oexp #% n
     return elem**(q**true)
 
 def check_inv(gt, rt):
@@ -839,8 +847,9 @@ class DrinfeldCohomology_Crys(Parent):
         # over providing a framework for algebraic computation
         self._init_category_(VectorSpaces(self.L()))
         self._basis_rep = identity_matrix(self.L(), self._dim)
-        self.precision = self._dm.n()/self._dm.m()
-        self.AL = PolynomialRing(self._dm.L(), 'w')
+        self.precision = self._dm.n()
+        self.AL1 = PolynomialRing(self._dm.L(), 'w')
+        self.AL = QuotientRing(self.AL1, (self.AL1.gen() - self._dm[0])**(2*self.precision))
 
     def dm(self):
         return self._dm
@@ -993,7 +1002,7 @@ class DrinfeldCohomology_Crys(Parent):
         c_ring = PolynomialRing(self.L(), 'V')
         ideal = c_ring.gen() - self.dm()[0]
         #coeff_ring = PolynomialRing(self.L(), 'V')
-        coeff_ring = QuotientRing(c_ring, ideal^precision)
+        coeff_ring = c_ring #QuotientRing(c_ring, ideal^precision)
 
         # The initial matrices
         matr0 = [self.init_matr(rec_coeff, i, coeff_ring) for i in range(s0, 0, -1)]
@@ -1006,8 +1015,9 @@ class DrinfeldCohomology_Crys(Parent):
         c0 = prod(matr0)
         cy = prod(matry)
         matrs = [matrix(cy) for i in range(s1 - 1, -1, -1)]
-        eval_matrs = [matrs[i].apply_map(lambda a: get_eval(a,  self.raw_frob(coeff_ring.gen(), -i*sstar, q, n )  )  ) for i in range(s1 -1, -1, -1)]
-        power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: self.raw_frob(a, i*sstar, q, n)) for i in range(s1 -1, -1, -1)]
+        #eval_matrs = [matrs[i].apply_map(lambda a: get_eval(a,  self.raw_frob(coeff_ring.gen(), -i*sstar, q, n )  )  ) for i in range(s1 -1, -1, -1)]
+        eval_matrs = [matrs[i] for i in range(s1 -1, -1, -1)]
+        power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: c_frob(a, i*sstar, q, n, coeff_ring.gen())) for i in range(s1 -1, -1, -1)]
         #start = self._basis_rep.matrix_from_rows_and_columns(range(self._basis_rep.nrows() - r, self._basis_rep.nrows()), range(r))
         return prod(power_eval_matrs)*c0
 
