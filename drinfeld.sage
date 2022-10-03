@@ -22,7 +22,10 @@ def poly_to_base(poly):
     else:
         return poly
 
-# Retrieve the coefficients of anything loosely structured as a polynomial
+"""
+ Retrieve the coefficients of anything loosely structured as a polynomial
+"""
+
 def get_coeffs(a):
     if a == a.parent().zero():
         return [0]
@@ -40,6 +43,7 @@ def get_eval(poly_obj, elem):
     coeffs = get_coeffs(poly_obj)
     return sum([ coeff*elem**i for i, coeff in enumerate(coeffs) ])
 
+# TODO: give this a better name
 def c_frob(elem, oexp, q, n, gr):
     true = oexp % n
     cfs = get_coeffs(elem)
@@ -206,7 +210,6 @@ class DMContext():
     """
     def to_reg(self, a):
         return self._reg(get_coeffs(a))
-        #return sum([coeff*self._reg.gen()**i for i, coeff in enumerate(a.list())])
 
     """
     Interpret an element of L as an element of base using its constant term
@@ -233,7 +236,6 @@ class DrinfeldModule():
         if context == None:
             # init context from ore
             if skew_gen:
-                # This does some checking that is already done when the context is created. Should probably elminiate this.
                 L = parent(ore).base()
                 F_q = L.base().base()
                 self._context = DMContext(F_q, L)
@@ -335,7 +337,7 @@ class DrinfeldModule():
     """
     def gamma_inv(self, a):
         if self._gamma_inv == None:
-            raise ValueError(f"Can't compute the inverse of the gamma map from {self._L} to {self._prime_field}")
+            raise ValueError(f"Can't compute the inverse of the gamma map from {self.L()} to {self._prime_field}")
         res = sum([coeff*self._gamma_inv**i for i, coeff in enumerate(get_coeffs(a))])
         return res
 
@@ -376,10 +378,7 @@ class DrinfeldModule():
     Given a member \a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
     defined by x |--> self.gen().
     """
-    def _map(self, ap):
-        a = ap
-        # if isinstance(ap, int):
-        #     return ap
+    def _map(self, a):
         if not (a.parent() is self.reg()):
             coeffs = get_coeffs(a)
             if coeffs != None:
@@ -487,9 +486,6 @@ class DrinfeldModule():
         sys = matrix(self.L(), nrow, ncol)
         rhs = vector(self.L(), nrow)
         rhs[nrow - 1] = -1
-        #for i in range(nrow):
-            # For columns we split the iteration to iterate over the a_j and then over the individual degree
-            # coefficients a_{jk}
         for j in range(r):
             for k in range(shifts[j]):
                 # Assuming the rows contain the coefficients of \phi_x^i, should double check
@@ -612,10 +608,9 @@ In particular, H_dR is a dimension r vector space with a canonical basis \eta_x 
 Under this identification, many computations on H_dR can be realized using algorithms for skew polynomials.
 
 
-
-
-
 """
+
+# TODO: ***FIX VARIABLE NAMES TO MAKE THEM MORE DESCRIPTIVE***
 
 
 class DrinfeldCohomology_dR(Parent):
@@ -662,34 +657,14 @@ class DrinfeldCohomology_dR(Parent):
         c0 = prod(matr0)
         cy = prod(matry)
         matrs = [matrix(cy) for i in range(s1 - 1, -1, -1)]
-        #eval_matrs = [matrs[i].apply_map(lambda a: coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar))) for i in range(s1 -1, -1, -1)]
-        #power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: self.fast_skew(a, i*sstar)) for i in range(s1 -1, -1, -1)]
         power_eval_matrs = [matrs[i].apply_map(lambda a: self.fast_skew(coeff_ring(a)(self.fast_skew(self.dm()[0], -i*sstar)), i*sstar)) for i in range(s1 -1, -1, -1)]
         start = self._basis_rep.matrix_from_rows_and_columns(range(self._basis_rep.nrows() - r, self._basis_rep.nrows()), range(r))
         return prod(power_eval_matrs)*c0*start
 
-    # def char_poly(self):
-    #     cpolyring = PolynomialRing(self.dm().reg(), 'X')
-    #     # sometimes have to conver to the gamma adic representation
-    #     return sum([self.dm()._context.to_reg(coeff)*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
-    #
-    # def char_poly_v2(self):
-    #     cpolyring = PolynomialRing(self.dm().reg(), 'X')
-    #     return sum([self.dm()._context.to_reg(coeff)*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
-    #
-    #
-    # def char_poly_v0(self):
-    #     cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
-    #     cpcoeffs = get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())
-    #     ieo = self.dm().to_prime(self.dm().gamma_inv(self.dm().to_reg(cpcoeffs[1])))
-    #     l_coeffs = [self.dm().gamma_inv(self.dm().to_reg(coeff)) for coeff in cpcoeffs]
-    #     prime_coeffs = [self.dm().to_prime(coeff) for coeff in l_coeffs]
-    #     ret = cpolyring.zero()
-    #     for i in range(len(prime_coeffs)):
-    #         ret += (poly_to_base(prime_coeffs[i]))*cpolyring.gen()**i
-    #     return ret
-
-    def char_poly(self):
+    def charpoly(self):
+        if self._dm.m() < self._dm.n():
+            print("de Rham cohomology being used for non-prime case.")
+            return None
         cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
         cpcoeffs = get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())
         l_coeffs = [self.dm().gamma_inv(self.dm().to_reg(coeff)) for coeff in cpcoeffs]
@@ -698,29 +673,6 @@ class DrinfeldCohomology_dR(Parent):
         for i, coef in enumerate(p_coeffs):
             ret += (poly_to_base(coef))*cpolyring.gen()**i
         return ret
-
-    # def char_poly_roots(self):
-    #     cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
-    #     cpcoeffs = get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())
-    #     root_invs = []
-    #     ieo = self.dm().to_prime(self.dm().gamma_inv(self.dm().to_reg(cpcoeffs[1])))
-    #     for root in self.dm().roots:
-    #         l_coeffs = [self.dm().gamma_inv2(self.dm().to_reg(coeff), root) for coeff in cpcoeffs]
-    #         root_invs.append(l_coeffs)
-    #     prime_coeffs = []
-    #     for entry in root_invs:
-    #         resg = [self.dm().to_prime(coeff) for coeff in entry]
-    #         prime_coeffs.append(resg)
-    #     cpoo = []
-    #     for entry in prime_coeffs:
-    #         ret = cpolyring.zero()
-    #         for i in range(len(entry)):
-    #             #print(f"prime coeff: {prime}")
-    #             ret += (poly_to_base(entry[i]))*cpolyring.gen()**i
-    #         cpoo.append(ret)
-    #     #ret = sum([ (coeff)*cpolyring.gen()**i for i, coeff in enumerate(prime_coeffs) ])
-    #     # print("returning")
-    #     return cpoo
 
     """
     Initialize matrix for use in the recurrence method.
@@ -738,9 +690,8 @@ class DrinfeldCohomology_dR(Parent):
             matr[0, r-1] += self.dm()[0]/(self.fast_skew(self.dm()[r], k))
         return matr
 
-    def slow_rec(self):
+    def charpoly_slow_rec(self):
         r = self._dm.rank()
-        #X = self.AL.gen()
         n = self._dm.n()
         state = [[0 if i != r - 1 - j else 1 for i in range(r)] for j in range(r)]
         for k in range(1, n + 1):
@@ -763,8 +714,6 @@ class DrinfeldCohomology_dR(Parent):
     def dm(self):
         return self._dm
 
-    # To simplify coding, we give an accessor to certain important objects.
-    # Since H_dR is a vector space over L it makes sense to have direct access.
     def L(self):
         return self.dm().L()
 
@@ -788,8 +737,6 @@ class DrinfeldCohomology_Crys(Parent):
     def dm(self):
         return self._dm
 
-    # To simplify coding, we give an accessor to certain important objects.
-    # Since H_dR is a vector space over L it makes sense to have direct access.
     def L(self):
         return self.dm().L()
 
@@ -811,9 +758,7 @@ class DrinfeldCohomology_Crys(Parent):
 
     """
     Methods for computing representations of elements of the Crystalline cohomology
-
     Recall the the Crystalline Cohomology is a free module of rank r
-
     """
      # This does one round of long division by T - \gamma_T using the module action
      # It does this by computing a solution to the linear system S = R + (T - \gamma_T)*Q
@@ -883,16 +828,10 @@ class DrinfeldCohomology_Crys(Parent):
         for i in range(r):
             brep = self.basis_rep(n + i + 1)
             matr.append(brep)
-            # print(f'brp: {n+i+1}')
-            # print(brep)
-            #matr.append(derham_force(drm, n + i + 1))
         smat = matrix(self.AL, matr)
-        #print("ILadic matrix")
-        #print(smat)
-        #print("------------------------------")
         return smat.charpoly('Z')
 
-    def slow_rec(self):
+    def charpoly_slow_rec(self):
         r = self._dm.rank()
         X = self.AL.gen()
         n = self._dm.n()
@@ -909,15 +848,9 @@ class DrinfeldCohomology_Crys(Parent):
         smat = matrix(self.AL, finmatr)
         return smat.charpoly('Z')
 
-
-
-
-
     """
-    An implementation of the matrix method for solving linearly recurrent sequence
-
-    Given the cohomology space, compute the canonical basis representation of \eta_x = \tau^deg
-
+    Uses the linear recurrence to determine the matrix representation of the Frobenius endomorphism on the
+    Crystalline cohomology w.r.t. the standard basis.
     """
 
     def crys_mat_meth(self, deg):
@@ -933,37 +866,30 @@ class DrinfeldCohomology_Crys(Parent):
 
         precision = self.dm().n() / self.dm()._a_char.degree()
 
-        c_ring = PolynomialRing(self.L(), 'V')
-        ideal = c_ring.gen() - self.dm()[0]
-        #coeff_ring = PolynomialRing(self.L(), 'V')
-        coeff_ring = c_ring #QuotientRing(c_ring, ideal^precision)
+        coeff_ring = PolynomialRing(self.L(), 'V')
 
         # The initial matrices
         matr0 = [self.init_matr(rec_coeff, i, coeff_ring) for i in range(s0, 0, -1)]
         # The polynomial matrices
         matry = [self.init_matr(rec_coeff, i, coeff_ring) for i in range(sstar + s0, s0, -1)]
 
-        # print(f's0: {s0} | s1: {s1} | sstar: {sstar}')
-
         # See notation from my presentations
         c0 = prod(matr0)
         cy = prod(matry)
         matrs = [matrix(cy) for i in range(s1 - 1, -1, -1)]
-        #eval_matrs = [matrs[i].apply_map(lambda a: get_eval(a,  self.raw_frob(coeff_ring.gen(), -i*sstar, q, n )  )  ) for i in range(s1 -1, -1, -1)]
         eval_matrs = [matrs[i] for i in range(s1 -1, -1, -1)]
         power_eval_matrs = [eval_matrs[s1 - 1 - i].apply_map(lambda a: c_frob(a, i*sstar, q, n, coeff_ring.gen())) for i in range(s1 -1, -1, -1)]
-        #start = self._basis_rep.matrix_from_rows_and_columns(range(self._basis_rep.nrows() - r, self._basis_rep.nrows()), range(r))
         return prod(power_eval_matrs)*c0
 
-    def char_poly(self):
-        cpolyring = PolynomialRing(self.dm().reg(), 'X')
-        # sometimes have to conver to the gamma adic representation
-        return sum([self.dm().gamma_adic(self.dm()._context.to_reg(coeff))*cpolyring.gen()**i for i, coeff in enumerate(get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())) ])
+
+    def charpoly(self):
+        return self.crys_mat_meth(self.dm().n() + self.dm().rank()).charpoly()
 
     def raw_frob(self, elem, oexp, q, n):
         true = oexp % n
         return elem**(q**true)
 
+## TODO: GET RID OF MOST OF THESE SO THERE IS ONLY ONE CHECK_CHAR FUNCTION
 
 def check_char0(dm, cp, frob_norm = 1):
     return sum([dm(cp[i])*dm.ore_ring().gen()**(dm.n()*i) for i in range(cp.degree() + 1)]) + frob_norm*dm(dm.frob_norm())
@@ -978,93 +904,9 @@ def check_char_gek(dm, cp):
     return sum([dm(cp[i])*dm.ore_ring().gen()**(nn*i) for i in range(len(cp))]) + dm.ore_ring().gen()**(dm.n()*dm.rank())
 
 
-
-def double_replace(multi, c1, c2):
-    coeffs1 = get_coeffs(multi)
-    coeffsh = [ get_eval(a, c2) for a in coeffs1]
-    return sum([coeff*c1**i for i, coeff in enumerate(coeffsh)])
-
-
-def crys_convert2(poly, dm, multivar, quor, var = 'X'):
-    PP = PolynomialRing(dm.reg(), 'X')
-    gamma_t = dm[0]
-    coeffs = get_coeffs(poly)
-    big = multivar.gens()[0]
-    lit =  multivar.gens()[1]
-    abg = double_replace(coeffs[1], big, lit)
-    coo = []
-    for i in range(1, len(coeffs)):
-        a = double_replace(coeffs[i], big, lit)
-        apl = a
-        coo.append(apl)
-    var = multivar.gens()[0]
-    coop = []
-    for poly in coo:
-        coop.append(poly.polynomial(var))
-    return sum([regr(coeff.polynomial(coeff.parent().gen()), dm)*PP.gen()**(i + 1) for i, coeff in enumerate(coop) ])
-
-
-def regr(llst, dm):
-    reg = dm.reg()
-    base = dm.base()
-    genr = reg.gen()
-    llst2 = get_coeffs(llst)
-    lest = []
-    for ent in llst2:
-        if len(get_coeffs(ent)) == 0:
-            lest.append(dm.base().zero())
-        else:
-            lest.append( dm.to_base(get_coeffs(ent)[0]))
-    return sum([coeff*genr**i for i, coeff in enumerate(lest)])
-
-
 """
 Tests
 """
-
-# def iinverse(dm, a, deg):
-#     '''
-#
-#     '''
-#     # if (a.degree() % self._rank != 0):
-#     #     return None
-#     # d = a.degree() // self._rank
-#     # if d >= len(self._phi_x_matrix): self._phi_x_v2(d) # Extend phi_x^i cache if d is too large
-#     d = deg / dm._rank
-#     rhs = vector(dm.L(), 5)
-#     inv_sys = matrix(dm.L(), 5, 5) # d+ 1
-#     # print(f'd: {d}')
-#     """
-#     Build the system involving d + 1 unknowns by extracting coefficients of degree \tau^{ri} from
-#     \phi_x^i and a i.e. we use every rth equation.
-#     """
-#     # print("len")
-#     # print(len(rhs))
-#
-#     for i in range(d + 1):
-#         #rhs[i]
-#
-#         # print(f"oloop: {i}")
-#         # print(f'rhs: {rhs[1]}')
-#         # print(f'adm: {a[dm._rank*i]}')
-#         rhs[i] = a[dm._rank*i]
-#         # print(f"oloopp: {i}")
-#         for j in range(i, d + 1):
-#             # print(f"inloop: {dm._rank*i} | {j}")
-#             inv_sys[i,j] = dm._phi_x_matrix[j][dm._rank*i]
-#             # print("donelo")
-#
-#     """
-#     Will likely change this to catch ValueError if no solution exists
-#     We should verify the coefficients lie in the base ring, and if they do
-#     coerce the result into a polynomial over the base field
-#     """
-#     try:
-#         sol = inv_sys.solve_right(rhs)
-#         return dm.reg()([coeff.list()[0] for coeff in sol])
-#     except ValueError:
-#         return None
-
 
 base_test = True
 extra_test = False
@@ -1114,76 +956,28 @@ if base_test:
         while len(ro) == 0:
             min_po = Fp.random_element(mm)
         spn[0] = ro[0][0]
-    #spn[0] = y
 
     print(f'Skew polynomial generator defining the dm: {spn} ')
     dm5 = DrinfeldModule(spn, con)
     drham = DrinfeldCohomology_dR(dm5)
     #io = drham.rec_mat_meth(nn + rr)
     print("char poly (under gamma map)")
-    #chario = drham.char_poly_v2()
-    #print(chario)
-    #print("computing char poly")
-    #cp = drham.char_poly() #io.charpoly()
-    #print("h1")
-    #opp = drham.char_poly_v0() #io.charpoly()
-    #print("h2")
-    #cp_v3 = drham.char_poly_v3() #io.charpoly()
-    #cp_v4 = drham.char_poly_v4() #io.charpoly()
-    # print("done char poly")
-    #print(io.charpoly())
-    #print(cp)
-
-    #print(resultant)
     print("testing char poly")
-    cp_prime = drham.char_poly()
+    cp_prime = drham.charpoly()
     print(f"char poly from derham: {cp_prime}")
     print("verification (this should be 0):")
-    resultant = check_char(dm5, cp_prime) #sum([dm5(cp[i])*dm5.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + dm5(dm5.frob_norm())
+    resultant = None
+    if cp_prime != None:
+        resultant = check_char(dm5, cp_prime) #sum([dm5(cp[i])*dm5.ore_ring().gen()**(nn*i) for i in range(a.degree() + 1)]) + dm5(dm5.frob_norm())
     print(resultant)
-    # root_ims = drham.char_poly_roots()
-    # for root in root_ims:
-    #     print(f'testing: {root}')
-    #     rress = check_char(dm5, root)
-    #     print(rress)
-
     print("crystalline")
     crys_cohom = DrinfeldCohomology_Crys(dm5)
-    crys_mat = crys_cohom.crys_mat_meth(nn + rr)
     print(crys_mat)
     print("char poly")
-    crys_char_poly = crys_mat.charpoly()
+    crys_char_poly = crys_cohom.charpoly()
     print(crys_char_poly)
     cfer = get_coeffs(crys_char_poly)
     gamma_t = dm5[0]
-    #mip = get_eval(dm5._a_char, tt)
-
-    print("building new ring")
-    KK.<TT, tt> = PolynomialRing(dm5.L(), 2, order='lex')
-    mip = get_eval(dm5.L().modulus(), tt)
-    #mip = get_eval(dm5._a_char, tt)
-    h = dm5.n()//dm5._a_char.degree() # precision
-    print("creating multi-ideal")
-    ih = KK((TT - dm5[0])**h)
-    print("tt")
-    II = Ideal([KK(mip), KK(ih)])
-    # II = Ideal([gamma_t.minimal_polynomial(tt), (TT - tt)**2])
-    print("taking quo")
-    II.groebner_basis()
-    Q = KK.quo(II)
-    print("cryscon2")
-    crys_con2 = crys_convert2(crys_char_poly, dm5, KK, Q)
-    print(crys_con2)
-    print("check (should be 0)")
-    #print(check_char(dm5, crys_con))
-    print("check crys con 2 (should be 0)")
-    char_res = check_char(dm5, crys_con2)
-    print(char_res)
-    # print("check crys con 2 with left shift")
-    # print(check_char0(dm5, crys_con2))
-
-    left = char_res.coefficients() #char_res/(dm5.ore_ring().gen()**nn)
-    #re23 = iinverse(dm5, left, len(left) - 1)
     print("gekeler")
     cp_gek = dm5.char_poly_gek()
     print(cp_gek)
@@ -1193,15 +987,9 @@ if base_test:
     cp_direct = crys_cohom.compute_charpoly_ILadic()
     print(cp_direct)
     cdirect = get_coeffs(cp_direct)
-    # print(cdirect[1]
-    #RF.<TT, tt> = PolynomialRing(dm5.L(), 2, order='lex')
-    # res3 = double_replace(cdirect[1], TT, tt)
-    # #res2 = double_replace(cfer[2], TT, tt)
-    # cc3 = Q(res3)
-    # print(f"f quo: {cc3}")
     print("testing slow recurrence method (crystalline)")
-    cp_slow = crys_cohom.slow_rec()
+    cp_slow = crys_cohom.charpoly_slow_rec()
     print(cp_slow)
-    print("testing slow recurrence method (crystalline)")
-    cp_slow_derham = drham.slow_rec()
+    print("testing slow recurrence method (de rham) (unconverted)")
+    cp_slow_derham = drham.charpoly_slow_rec()
     print(cp_slow_derham)
