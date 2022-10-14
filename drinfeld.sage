@@ -379,6 +379,7 @@ class DrinfeldModule():
     defined by x |--> self.gen().
     """
     def _map(self, a):
+        # Bad practice: this is coercive
         if not (a.parent() is self.reg()):
             coeffs = get_coeffs(a)
             if coeffs != None:
@@ -640,7 +641,7 @@ class DrinfeldCohomology_dR(Parent):
 
     """
 
-    def rec_mat_meth(self, deg):
+    def derham_rec(self, deg):
         r = self._dim
         k_0, k = self._basis_rep.nrows() - r, deg - r
         k_rel = k - k_0
@@ -666,7 +667,7 @@ class DrinfeldCohomology_dR(Parent):
             print("de Rham cohomology being used for non-prime case.")
             return None
         cpolyring = PolynomialRing(self.dm().prime_field(), 'X')
-        cpcoeffs = get_coeffs(self.rec_mat_meth(self.dm().n() + self.dm().rank()).charpoly())
+        cpcoeffs = get_coeffs(self.derham_rec(self.dm().n() + self.dm().rank()).charpoly())
         l_coeffs = [self.dm().gamma_inv(self.dm().to_reg(coeff)) for coeff in cpcoeffs]
         p_coeffs = [self.dm().to_prime(coeff) for coeff in l_coeffs]
         ret = cpolyring.zero()
@@ -846,6 +847,8 @@ class DrinfeldCohomology_Crys(Parent):
         for i in range(r):
             finmatr.append(state.pop())
         smat = matrix(self.AL, finmatr)
+        print("slow rec")
+        print(smat)
         return smat.charpoly('Z')
 
     """
@@ -853,7 +856,7 @@ class DrinfeldCohomology_Crys(Parent):
     Crystalline cohomology w.r.t. the standard basis.
     """
 
-    def crys_mat_meth(self, deg):
+    def crys_rec(self, deg, precision= 0):
         r = self._dim
         k_0, k = self._basis_rep.nrows() - r, deg - r
         k_rel = k - k_0
@@ -864,9 +867,13 @@ class DrinfeldCohomology_Crys(Parent):
         n = self.dm().n()
         q = self.dm().q()
 
-        precision = self.dm().n() / self.dm()._a_char.degree()
+        precision = self.dm().n()
 
-        coeff_ring = PolynomialRing(self.L(), 'V')
+        #precision = self.dm().n() / self.dm()._a_char.degree()
+
+        coeff_ring1 = PolynomialRing(self.L(), 'V')
+        ideal = coeff_ring1.gen() - self.dm()[0]
+        coeff_ring = QuotientRing(coeff_ring1, ideal^precision)
 
         # The initial matrices
         matr0 = [self.init_matr(rec_coeff, i, coeff_ring) for i in range(s0, 0, -1)]
@@ -883,7 +890,7 @@ class DrinfeldCohomology_Crys(Parent):
 
 
     def charpoly(self):
-        return self.crys_mat_meth(self.dm().n() + self.dm().rank()).charpoly()
+        return self.crys_rec(self.dm().n() + self.dm().rank()).charpoly()
 
     def raw_frob(self, elem, oexp, q, n):
         true = oexp % n
@@ -904,6 +911,11 @@ def check_char_gek(dm, cp):
     return sum([dm(cp[i])*dm.ore_ring().gen()**(nn*i) for i in range(len(cp))]) + dm.ore_ring().gen()**(dm.n()*dm.rank())
 
 
+def double_replace(multi, c1, c2):
+    coeffs1 = get_coeffs(multi)
+    coeffsh = [ get_eval(a, c2) for a in coeffs1]
+    return sum([coeff*c1**i for i, coeff in enumerate(coeffsh)])
+
 """
 Tests
 """
@@ -911,7 +923,7 @@ Tests
 base_test = True
 extra_test = False
 force_interm = False
-randomize = True
+randomize = False
 # set_base_mod = True
 # set_ext_mod = True
 
@@ -960,7 +972,7 @@ if base_test:
     print(f'Skew polynomial generator defining the dm: {spn} ')
     dm5 = DrinfeldModule(spn, con)
     drham = DrinfeldCohomology_dR(dm5)
-    #io = drham.rec_mat_meth(nn + rr)
+    #io = drham.rec_rec(nn + rr)
     print("char poly (under gamma map)")
     print("testing char poly")
     cp_prime = drham.charpoly()
@@ -972,7 +984,7 @@ if base_test:
     print(resultant)
     print("crystalline")
     crys_cohom = DrinfeldCohomology_Crys(dm5)
-    print(crys_mat)
+    #print(crys_mat)
     print("char poly")
     crys_char_poly = crys_cohom.charpoly()
     print(crys_char_poly)
@@ -983,7 +995,7 @@ if base_test:
     print(cp_gek)
     print("checking gekeler algorithm (should be 0)")
     print(check_char_gek(dm5, cp_gek))
-    print("testing factorization by (T - \gamma_T)")
+    print("testing full algorithm")
     cp_direct = crys_cohom.compute_charpoly_ILadic()
     print(cp_direct)
     cdirect = get_coeffs(cp_direct)
@@ -993,3 +1005,42 @@ if base_test:
     print("testing slow recurrence method (de rham) (unconverted)")
     cp_slow_derham = drham.charpoly_slow_rec()
     print(cp_slow_derham)
+    h = dm5.n()//dm5._a_char.degree() # precision
+
+    print("check mod")
+    nring = PolynomialRing(dm5.L(), 'Xi')
+    Xi = nring.gen()
+    cpsc = get_coeffs(cp_slow)
+    ct1 = get_eval(cpsc[1], Xi)
+    print(f'Xi: {ct1}')
+    tc = ct1 % (Xi - dm5[0])**h
+    print(tc)
+
+
+    # Testing lower precision
+    KQ.<uu, tt, TT> = PolynomialRing(dm5.base(), 3, order='lex')
+    KQ2.<aa, bb> = PolynomialRing(dm5.base(), 2, order='lex')
+    mip = get_eval(dm5.L().modulus(), tt)
+    #mip = get_eval(dm5._a_char, tt)
+
+    gam = get_eval(dm5[0], tt)
+    print("creating multi-ideal")
+    ih = KQ((uu - gam))
+    II = Ideal([KQ(mip), KQ(ih)])
+    # II = Ideal([gamma_t.minimal_polynomial(tt), (TT - tt)**2])
+    print("taking quo")
+    ff = II.groebner_basis()
+    print(f'grob: {ff}')
+    fp = ff + [(TT - uu)**h]
+    pu = get_eval(dm5._a_char, aa)
+    xu = (bb - aa)**h
+    Q = KQ.quo(fp)
+    Q2 = KQ2.quo([pu, xu])
+    # tc = cdirect[1]
+    res1 = double_replace(tc, TT, tt)
+    res2 = double_replace(tc, bb, aa)
+    print(f'res1: {res1}')
+    resq = Q(res1)
+    resq2 = Q2(res2)
+    print(f'quo: {resq}')
+    print(f'quo: {resq2}')
