@@ -23,7 +23,12 @@ def poly_to_base(poly):
         return poly
 
 """
- Retrieve the coefficients of anything loosely structured as a polynomial
+Retrieve the coefficients of anything loosely structured as a "polynomial".
+
+This handles the fact that there are many ways that procedures SageMath
+can return polynomial objects but no universal interface that works
+for all cases.
+
 """
 
 def get_coeffs(a):
@@ -36,14 +41,20 @@ def get_coeffs(a):
     elif hasattr(a, 'polynomial'):
         return a.polynomial().list()
     else:
-        raise TypeError(f"object {a} does not have a standard coefficient attribute")
+        raise TypeError(f"object {a} does not have a standard way to extract coefficients")
 
-# retrieve the evaluation
+"""
+Evaluate a "polynomial" based on its coefficients via get_coeffs
+"""
 def get_eval(poly_obj, elem):
     coeffs = get_coeffs(poly_obj)
     return sum([ coeff*elem**i for i, coeff in enumerate(coeffs) ])
 
 # TODO: give this a better name
+"""
+Apply the Frobenius endomorphism to a polynomial's coefficients
+
+"""
 def c_frob(elem, oexp, q, n, gr):
     true = oexp % n
     cfs = get_coeffs(elem)
@@ -139,7 +150,7 @@ class DMContext():
         such that self._frob_L[(a, i)] = a^(q^i)
         """
         self._frob_L = dict()
-        self._frob_L_v2 = dict()
+        #self._frob_L_v2 = dict()
 
 
 
@@ -156,33 +167,33 @@ class DMContext():
     """
 
 
+    # def _fast_skew(self, a, iters = 1):
+    #     # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
+    #     t_iters = iters % self._n
+    #     if a.parent() is self._base or t_iters == 0:
+    #         return a
+    #     if (a, t_iters) in self._frob_L:
+    #         return self._frob_L[(a, t_iters)]
+    #
+    #     # Should properly fix this to properly check for coercion
+    #
+    #     if a.parent() is self._L or True:
+    #         im = self._L(a)
+    #         for i in range(t_iters):
+    #             """
+    #             TODO: Replace this critical line with a more efficient approach.
+    #             """
+    #             im = self._ore_ring.twisting_morphism()(im)
+    #         self._frob_L[(a, t_iters)] = im
+    #         return im
+    #     raise TypeError(f"{a} does not coerce into {self._L}")
+
     def _fast_skew(self, a, iters = 1):
-        # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
-        t_iters = iters % self._n
-        if a.parent() is self._base or t_iters == 0:
-            return a
-        if (a, t_iters) in self._frob_L:
-            return self._frob_L[(a, t_iters)]
-
-        # Should properly fix this to properly check for coercion
-
-        if a.parent() is self._L or True:
-            im = self._L(a)
-            for i in range(t_iters):
-                """
-                TODO: Replace this critical line with a more efficient approach.
-                """
-                im = self._ore_ring.twisting_morphism()(im)
-            self._frob_L[(a, t_iters)] = im
-            return im
-        raise TypeError(f"{a} does not coerce into {self._L}")
-
-    def _fast_skew_v2(self, a, iters = 1):
         # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
         t_iters = iters % self._n
         if parent(a) is self._base or t_iters == 0:
             return a
-        if a in self._frob_L_v2 and t_iters in self._frob_L_v2[a]:
+        if a in self._frob_L_v2 and t_iters in self._frob_L[a]:
             return self._frob_L_v2[a][t_iters]
 
         # Should properly fix this to properly check for coercion
@@ -206,13 +217,13 @@ class DMContext():
         raise TypeError(f"{a} does not coerce into {self._L}")
 
     """
-    Interpret an element of L as an element of A via its canonical polynomial representative of degree at most n
+    Cast an element of L as an element of A via its canonical polynomial representative of degree at most n
     """
     def to_reg(self, a):
         return self._reg(get_coeffs(a))
 
     """
-    Interpret an element of L as an element of base using its constant term
+    Project L onto base using its constant term
     """
     def to_base(self, a):
         return get_coeffs(a)[0]
