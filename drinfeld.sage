@@ -7,9 +7,12 @@ from sage.categories.vector_spaces import VectorSpaces
 from sage.rings.polynomial.ore_polynomial_element import OrePolynomial
 from sage.rings.polynomial.ore_polynomial_ring import OrePolynomialRing
 from sage.rings.polynomial.polynomial_ring import PolynomialRing_general
+from sage.rings.polynomial.polynomial_ring_constructor import PolynomialRing
 from sage.rings.finite_rings.finite_field_base import FiniteField
 from sage.rings.integer import Integer
 from sage.matrix.constructor import Matrix
+
+from functools import lru_cache
 
 """
 SPECIAL FUNCTIONS
@@ -174,7 +177,13 @@ class DMContext():
 
     """
 
+    @lru_cache(maxsize=None)
     def _fast_skew(self, a, iters = 1):
+        t_iters = iters % self._n
+        # lacks generality, but faster for this specific case
+        return (a)^((self._base.order())^t_iters)
+
+    def _fast_skew_v2(self, a, iters = 1):
         # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
         t_iters = iters % self._n
         if parent(a) is self._base or t_iters == 0:

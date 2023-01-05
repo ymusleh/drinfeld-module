@@ -16,6 +16,8 @@ from sage.rings.all import Field
 
 from sage.functions.all import ceil, sqrt
 from sage.misc.misc_c import prod
+from functools import lru_cache
+
 
 
 """
@@ -124,6 +126,7 @@ class DMContext():
     """
     def __init__(self, base, L, var = 'x', svar = 't', lvar = 'z'):
         # Create base field
+        #print(f'test 111')
         if isinstance(base, Field):
             self._base = base
         elif (base in ZZ or isinstance(base, int)) and is_prime_power(base):
@@ -167,18 +170,24 @@ class DMContext():
         """
         self._frob_L = dict()
 
-
+    @lru_cache(maxsize=None)
     def _fast_skew(self, a, iters = 1):
+        t_iters = iters % self._n
+        # lacks generality, but faster for this specific case
+        return (a)**((self._base.order())**t_iters)
+
+    @lru_cache(maxsize=None)
+    def _fast_skew_v2(self, a, iters = 1):
         # probably need a more robust way to check if a is an element of just the base (can it have L as a parent but still 'just' be an element of base?)
         t_iters = iters % self._n
-        if parent(a) is self._base or t_iters == 0:
+        if a.parent() is self._base or t_iters == 0:
             return a
         if a in self._frob_L and t_iters in self._frob_L[a]:
             return self._frob_L[a][t_iters]
 
         # Should properly fix this to properly check for coercion
 
-        if parent(a) is self._L or True:
+        if a.parent() is self._L or True:
             if not a in self._frob_L:
                 self._frob_L[a] = dict()
                 start = 0
@@ -249,23 +258,38 @@ class DrinfeldModule():
 
         self._rank = self._gen.degree()
         '''
-        Cache for coefficients of powers \phi_x^i
+        Cache for coefficients of skew polynomials \phi_x^i that are the images under the Drinfeld map
+        \phi of x^i
         '''
         self._phi_x_matrix = [[self.L().one()], self._gen.coefficients(sparse=False)]
+
         """
         Intermediate Field parameters
         The intermediate field F_{\frak{p}} = \gamma(A) can be inferred since \gamma(x) is the constant term \phi_x
         The A-characteristic \frak{p} is therefore the minimal polynomial of \gamma(x)
+
+        Strictly speaking, a lot of this is not necessary for any of the currently implemented algorithms, but nice to have.
+
         """
         self._gamma_x = self.gen().coefficients(sparse=False)[0] # image of x is the constant term
         self._a_char = self._gamma_x.minpoly()
         self._m = self._a_char.degree()
-        self._prime_field = self.base().extension(self._a_char)
+        self._prime_field = self.base().extension(self._a_char, 'j')
+        self._gamma_reg = self._context.to_reg(self._gamma_x)
+        '''
+        The inverse of gamma is represented by the image of self._L.gen(). Currently computed by factoring
+        L.modulus() over the prime field.
+        '''
+        self._gamma_inv = None
+        for root, mult in self.modulus().roots(self.prime_field()):
+            if get_eval(self._gamma_x, root) == self._prime_field.gen():
+                self._gamma_inv = root
+                break
 
 
 
     """
-    Given a member \a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
+    Given a member a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
     defined by x |--> self.gen().
     """
     def __call__(self, a):
@@ -273,7 +297,7 @@ class DrinfeldModule():
 
 
     """
-    Get the ith coefficient of the skew polynomial \phi_x
+    Get the ith coefficient of the skew polynomial phi_x
     """
     def __getitem__(self, i):
         if isinstance(i, int) or isinstance(i, Integer) and i <= self.rank() and i >= 0:
@@ -282,23 +306,40 @@ class DrinfeldModule():
             raise ValueError("Invalid subscript access for drinfeld module.")
 
     """
-    Compute the image of a polynomial a under the A-characteristic map \gamma
+    Compute the image of a polynomial a under the A-characteristic map gamma
     """
 
     def gamma(self, a):
         return sum([coeff*self._gamma_x**i for i, coeff in enumerate(a.coefficients(sparse=False))])
 
+    """
+    convert to representation in terms of prime field uniformizer
+    """
+    def to_prime(self, a):
+        coeffs = get_coeffs(a)
+        return sum([coeff*self.prime_field().gen()**i for i, coeff in enumerate(coeffs)])
+
 
     """
-    Given a degree deg, expand the matrix self._phi_x_matrix to include coefficients of \phi_x^i for i up to degself.
+    Compute the reverse map from L to F_{\frak{p}} when they are equal
+    """
+    def gamma_inv(self, a):
+        if self._gamma_inv == None:
+            raise ValueError(f"Can't compute the inverse of the gamma map from {self.L()} to {self._prime_field}")
+        res = sum([coeff*self._gamma_inv**i for i, coeff in enumerate(get_coeffs(a))])
+        return res
 
-    This is mostly an internal method i.e. this should only be called by other methods to compute and cache \phi_x^i
+
+    """
+    Given a degree deg, expand the matrix self._phi_x_matrix to include coefficients of phi_x^i for i up to degself.
+
+    This is mostly an internal method i.e. this should only be called by other methods to compute and cache phi_x^i
     when necessary to do so for other methods.
     """
 
     def _phi_x(self, deg):
         """
-        We compute the matrix images \phi_x^i using the recurrence method (see Gekeler). By default we do this up to i = deg.
+        We compute the matrix images phi_x^i using the recurrence method (see Gekeler). By default we do this up to i = deg.
 
         """
         r, ext, phi_x = self._rank, len(self._phi_x_matrix), self._phi_x_matrix
@@ -309,8 +350,8 @@ class DrinfeldModule():
         for i in range(max(2, ext), deg + 1):
             for j in range(r*i + 1):
                 """
-                low_deg: lowest degree term of \phi_x contributing to the skew degree term of \tau^j. This is 0 if j <= r*(i - 1) and j - r*(i-1) otherwise.
-                high_deg: Highest degree term of \phi_x contributing to the skew degree term of \tau^j. This is min(r, j).
+                low_deg: lowest degree term of phi_x contributing to the skew degree term of tau^j. This is 0 if j <= r*(i - 1) and j - r*(i-1) otherwise.
+                high_deg: Highest degree term of phi_x contributing to the skew degree term of tau^j. This is min(r, j).
 
                 [explain this computation further here]
 
@@ -320,7 +361,7 @@ class DrinfeldModule():
                 phi_x[i][j] = sum([a*b for a, b in zip(phi_x[1][low_deg:high_deg + 1], recs)])
 
     """
-    Given a member \a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
+    Given a member a in the ring of regular functions self._context._reg, compute its image under the Drinfeld Module map
     defined by x |--> self.gen().
     """
     def _map(self, a):
@@ -337,12 +378,12 @@ class DrinfeldModule():
         im = self.ore_ring().zero()
         for i, coeff in enumerate(a.coefficients(sparse=False)):
             for j, roeff in enumerate(self._phi_x_matrix[i]):
-                im += coeff*roeff*self.ore_ring().gen()^j
+                im += coeff*roeff*self.ore_ring().gen()**j
         return im
 
 
     '''
-    Given a skew polynomial a, determine if it is in the image \phi(self.reg()), and if so return its preimage.
+    Given a skew polynomial a, determine if it is in the image phi(self.reg()), and if so return its preimage.
     Otherwise we return None
     '''
     def _inverse(self, a):
@@ -357,8 +398,8 @@ class DrinfeldModule():
         inv_sys = matrix(self.L(), d + 1, d + 1 )
 
         """
-        Build the system involving d + 1 unknowns by extracting coefficients of degree \tau^{ri} from
-        \phi_x^i and a i.e. we use every rth equation.
+        Build the system involving d + 1 unknowns by extracting coefficients of degree tau^{ri} from
+        phi_x^i and a i.e. we use every rth equation.
         """
         for i in range(d + 1):
             rhs[i] = a[self._rank*i]
@@ -396,6 +437,58 @@ class DrinfeldModule():
             return self._eval(self(poly), a)
         else:
             raise TypeError(f"{poly} is not a valid polynomial in the domain or codomain of the Drinfeld Module")
+
+    """
+    Finds the characteristic polynomial by solving for a degree r polynomial for which the Frobenius element is a root.
+
+    That is, we solve for a_i = \sum_{j=0}^{n(r - i)/r} a_{i,j}T^j such that
+
+    \tau^n + \phi_{a_{r-1}} \tau^{n(r-1)} + \ldots + \phi_{a_1} \tau^n + \phi_{a_0} = 0
+
+    Requires computing \phi_T^i for i up to O(n)
+    """
+    def char_poly_gek(self):
+        tring = self.reg() #PolynomialRing(self.L(), 'k')
+        x = tring.gen()
+        self._phi_x(self.n())
+        """
+        Setting up the matrix
+
+        ith row corresponds to the contribution to the degree i skew term coefficients
+        from all sources; nr + 1 rows overall
+
+        We will likely precompute the frobenius norm using the closed form formula
+
+        The variable vector is [a_{1,0}, a_{1,1}, \ldots, a_{r-1, n/r}]^T
+
+        """
+        # For now code it to find the constant term as well
+        r = self.rank()
+        n = self.n()
+        nrow = self.n()*self.rank() + 1
+        degs = [ (self.n()*(self.rank() - j))//self.rank() for j in range(r) ]
+        shifts = [degs[i] + 1 for i in range(len(degs))]
+        deg_off = [0] + [ sum(shifts[:i]) for i in range(1,r) ]
+        ncol = sum(degs) + r
+        sys = matrix(self.L(), nrow, ncol)
+        rhs = vector(self.L(), nrow)
+        rhs[nrow - 1] = -1
+        for j in range(r):
+            for k in range(shifts[j]):
+                # Assuming the rows contain the coefficients of \phi_x^i, should double check
+                ims = self._phi_x_matrix[k]
+                for i in range(len(ims)):
+                    # may need to fix the column index offset to account for constant terms
+                    sys[i + n*j, deg_off[j] + k] = ims[i]
+
+        sol = sys.solve_right(rhs)
+        coeffs = []
+        for i in range(r):
+            poly = 0
+            for j in range(shifts[i]):
+                poly += self.to_base(sol[deg_off[i] + j])*x**j
+            coeffs.append(poly)
+        return coeffs
 
     """
     getters
@@ -605,3 +698,6 @@ Given
 
 def check_char(dm, cp, frob_norm = 1):
     return sum([dm(cp[i])*dm.ore_ring().gen()**(dm.n()*i) for i in range(cp.degree() + 1)]) + frob_norm*dm(dm.frob_norm())
+
+def check_char_gek(dm, cp):
+    return sum([dm(cp[i])*dm.ore_ring().gen()**(dm.n()*i) for i in range(len(cp))]) + dm.ore_ring().gen()**(dm.n()*dm.rank())
