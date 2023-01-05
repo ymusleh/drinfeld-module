@@ -41,13 +41,10 @@ Why a separate class?
 To Do: Decide if and how algebraic objects such as D(\phi, L) should be instantiated
 using existing SageMath classes. Should this be done using rings, categories, or some other
 class? To be determined.
-
-
 """
 
 """
 Class for the de Rham Cohomology of a Drinfeld Module which we will denote H_dR throughout.
-
 
 An element \eta of H_dR is uniquely specified by its evaluation at the generator for A, \eta_x,
 which is a skew polynomial of degree at most r and 0 constant term.
@@ -55,11 +52,6 @@ which is a skew polynomial of degree at most r and 0 constant term.
 In particular, H_dR is a dimension r vector space with a canonical basis \eta_x = \tau^i for 1 <= i <= r.
 
 Under this identification, many computations on H_dR can be realized using algorithms for skew polynomials.
-
-
-
-
-
 """
 
 class DrinfeldCohomology_deRham():
@@ -67,9 +59,6 @@ class DrinfeldCohomology_deRham():
         # The associated Drinfeld Module
         self._dm = dm
         self._dim = dm.rank()
-        # Not sure how necessary this is since we are mostly concerned with performance
-        # over providing a framework for algebraic computation
-        #self._init_category_(VectorSpaces(self.L()))
 
         """
         As necessary, we can compute and cache representations of \eta
@@ -89,7 +78,6 @@ class DrinfeldCohomology_deRham():
     degree deg. This method extends previously computed and cached values.
 
     """
-
     def derham_rec(self, deg):
         r = self._dim
         k_0, k = self._basis_rep.nrows() - r, deg - r
@@ -141,7 +129,6 @@ class DrinfeldCohomology_deRham():
     """
     Getters
     """
-    # Return the underlying Drinfeld Module
     def dm(self):
         return self._dm
 

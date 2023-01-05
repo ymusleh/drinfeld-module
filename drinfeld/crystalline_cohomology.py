@@ -18,19 +18,25 @@ from sage.all import prod
 
 from functools import lru_cache
 
-from drinfeld import DrinfeldModule, get_coeffs, get_eval, c_frob
+from drinfeld import DrinfeldModule, get_coeffs, get_eval
 
+"""
+Apply the Frobenius endomorphism to a polynomial's coefficients
 
+"""
+def c_frob(elem, oexp, q, n, gr):
+    true = oexp % n
+    cfs = get_coeffs(elem)
+    ret = 0
+    for i, cf in enumerate(cfs):
+        ret += (cf**(q**true))*gr**i
+    return ret
 
 
 class DrinfeldCohomology_Crys():
     def __init__(self, dm):
-        # the associated Drinfeld Module
         self._dm = dm
         self._dim = dm.rank()
-        # Not sure how necessary this is since we are mostly concerned with performance
-        # over providing a framework for algebraic computation
-        #self._init_category_(VectorSpaces(self.L()))
         self._basis_rep = identity_matrix(self.L(), self._dim)
         self.precision = self._dm.n()
         self.AL1 = PolynomialRing(self._dm.L(), 'w')
@@ -58,13 +64,10 @@ class DrinfeldCohomology_Crys():
         matr[0, r-1] += (1/(self.fast_skew(self.dm()[r], k)))*ring.gen()
         return matr
 
-
-
     """
     Uses the linear recurrence to determine the matrix representation of the Frobenius endomorphism on the
     Crystalline cohomology w.r.t. the standard basis.
     """
-
     def crys_rec(self, deg, precision = 0):
         r, n, q = self._dim, self.dm().n(), self.dm().q()
         k_0, k = self._basis_rep.nrows() - r, deg - r
@@ -85,14 +88,8 @@ class DrinfeldCohomology_Crys():
         power_eval_matrs = [matrix(gstep).apply_map(lambda a: c_frob(a, i*sstar, q, n, coeff_ring.gen())) for i in range(s1 -1, -1, -1)]
         return prod(power_eval_matrs)*c0
 
-
     def charpoly(self, prec = 0):
         return self.crys_rec(self.dm().n() + self.dm().rank(), prec).charpoly()
-
-## TODO: GET RID OF MOST OF THESE SO THERE IS ONLY ONE CHECK_CHAR FUNCTION
-
-def check_char(dm, cp, frob_norm = 1):
-    return sum([dm(cp[i])*dm.ore_ring().gen()**(dm.n()*i) for i in range(1, cp.degree() + 1)]) + frob_norm*dm(dm.frob_norm())
 
 
 def double_replace(multi, c1, c2):
