@@ -60,14 +60,6 @@ t2 = perf_counter()
 print(f"new time: {t2 - t1}")
 print("done1")
 ac = a.coefficients(sparse=False)
-print("old")
-ima2 = dm5.raw_im(ac)
-
-print("gamma map")
-print(dm5.gamma(a))
-
-print("check (should be 0)")
-print(ima2 - ima1)
 sigma = dm5.ore_ring().twisting_morphism()
 
 print("true")

@@ -64,29 +64,45 @@ class DrinfeldCohomology_Crys():
         matr[0, r-1] += (1/(self.fast_skew(self.dm()[r], k)))*ring.gen()
         return matr
 
+    def power_reduction(self, matr, ex, mod, ring):
+        prmatr = matrix(ring, self._dim, self._dim)
+        for i, row in enumerate(matr):
+            for j, pol in enumerate(row):
+                polmod = pol % mod
+                prmatr[i, j] = ring([ self.fast_skew(c, ex) for c in get_coeffs(polmod) ])
+        return prmatr
+
+
+
+
     """
     Uses the linear recurrence to determine the matrix representation of the Frobenius endomorphism on the
     Crystalline cohomology w.r.t. the standard basis.
     """
+
     def crys_rec(self, deg, precision = 0):
         r, n, q = self._dim, self.dm().n(), self.dm().q()
-        k_0, k = self._basis_rep.nrows() - r, deg - r
-        k_rel = k - k_0
-        sstar = ceil(sqrt(k_rel))
-        s0, s1 = k_rel % sstar, k_rel // sstar
+        nstar = ceil(sqrt(n*precision))
+        n1, n0 = n // nstar, n % nstar
         if precision < 1:
             precision = self.dm().n() + 1
         rec_coeff = [ self.L()(-1)*self.dm()[r - i]/self.dm()[r] for i in range(1, r + 1) ]
 
         coeff_ring1 = PolynomialRing(self.L(), 'V')
-        ideal = coeff_ring1.gen() - self.dm()[0]
-        coeff_ring = QuotientRing(coeff_ring1, ideal**precision)
+        mu = (coeff_ring1.gen() - self.dm()[0])**precision
+        mu_coeffs = get_coeffs(mu)
+        coeff_ring = QuotientRing(coeff_ring1, mu)
 
         # The initial matrices
-        c0 = prod([self.init_matr(rec_coeff, i, coeff_ring) for i in range(s0, 0, -1)])
-        gstep = prod([self.init_matr(rec_coeff, i, coeff_ring) for i in range(sstar + s0, s0, -1)])
-        power_eval_matrs = [matrix(gstep).apply_map(lambda a: c_frob(a, i*sstar, q, n, coeff_ring.gen())) for i in range(s1 -1, -1, -1)]
-        return prod(power_eval_matrs)*c0
+        C0 = prod([self.init_matr(rec_coeff, i, coeff_ring1) for i in range(n0, 0, -1)])
+        C = prod([self.init_matr(rec_coeff, i, coeff_ring1) for i in range(nstar + n0, n0, -1)])
+
+        # Compute the reduction moduli
+        moduli = [ coeff_ring1([self.fast_skew(c, -i*nstar) for c in mu_coeffs ]) for i in range(1, n1) ]
+        # Reduce and apply coefficient-wise frobenius
+        power_reduction_matrs = [self.power_reduction(C, i*nstar, moduli[i-1], coeff_ring1) for i in range(1, n1) ]
+        power_reduction_matrs.reverse()
+        return prod(power_reduction_matrs)*C*C0
 
     def charpoly(self, prec = 0):
         return self.crys_rec(self.dm().n() + self.dm().rank(), prec).charpoly()

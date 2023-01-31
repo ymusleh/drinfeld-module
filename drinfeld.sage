@@ -75,6 +75,12 @@ def c_frob(elem, oexp, q, n, gr):
         ret += (cf**(q**true))*gr**i
     return ret
 
+"""
+Apply an operation to a polynomial coefficient-wise
+"""
+def coeff_op(poly, op, iters):
+    return [ op(c, iters) for c in get_coeffs(poly) ]
+
 def raw_frob(elem, oexp, q, n):
     true = oexp #% n
     return elem**(q**true)
@@ -346,7 +352,6 @@ class DrinfeldModule():
         if ext > deg:
             return
         phi_x += [[self.L().zero() for j in range(r*i + 1)] for i in range(ext, deg + 1)]
-        phi_x[1] = self._gen.coefficients(sparse=False)
         for i in range(max(2, ext), deg + 1):
             for j in range(r*i + 1):
                 """
@@ -731,6 +736,8 @@ class DrinfeldCohomology_Crys(Parent):
 
     """
     Initialize matrix for use in the recurrence method.
+
+    This constructs the matrix
     """
     def init_matr(self, coeffs, k, ring):
         r = self._dim
@@ -743,6 +750,16 @@ class DrinfeldCohomology_Crys(Parent):
         return matr
 
 
+    def power_reduction(self, matr, ex, mod, ring):
+        prmatr = matrix(ring, self._dim, self._dim)
+        for i, row in enumerate(matr):
+            for j, pol in enumerate(row):
+                polmod = pol % mod
+                prmatr[i, j] = ring([ self.fast_skew(c, ex) for c in get_coeffs(polmod) ])
+        return prmatr
+
+
+
 
     """
     Uses the linear recurrence to determine the matrix representation of the Frobenius endomorphism on the
@@ -751,23 +768,27 @@ class DrinfeldCohomology_Crys(Parent):
 
     def crys_rec(self, deg, precision = 0):
         r, n, q = self._dim, self.dm().n(), self.dm().q()
-        k_0, k = self._basis_rep.nrows() - r, deg - r
-        k_rel = k - k_0
-        sstar = ceil(sqrt(k_rel))
-        s0, s1 = k_rel % sstar, k_rel // sstar
+        nstar = ceil(sqrt(n*precision))
+        n1, n0 = n // nstar, n % nstar
         if precision < 1:
             precision = self.dm().n() + 1
         rec_coeff = [ self.L()(-1)*self.dm()[r - i]/self.dm()[r] for i in range(1, r + 1) ]
 
         coeff_ring1 = PolynomialRing(self.L(), 'V')
-        ideal = coeff_ring1.gen() - self.dm()[0]
-        coeff_ring = QuotientRing(coeff_ring1, ideal^precision)
+        mu = (coeff_ring1.gen() - self.dm()[0])^precision
+        mu_coeffs = get_coeffs(mu)
+        coeff_ring = QuotientRing(coeff_ring1, mu)
 
         # The initial matrices
-        c0 = prod([self.init_matr(rec_coeff, i, coeff_ring) for i in range(s0, 0, -1)])
-        gstep = prod([self.init_matr(rec_coeff, i, coeff_ring) for i in range(sstar + s0, s0, -1)])
-        power_eval_matrs = [matrix(gstep).apply_map(lambda a: c_frob(a, i*sstar, q, n, coeff_ring.gen())) for i in range(s1 -1, -1, -1)]
-        return prod(power_eval_matrs)*c0
+        C0 = prod([self.init_matr(rec_coeff, i, coeff_ring1) for i in range(n0, 0, -1)])
+        C = prod([self.init_matr(rec_coeff, i, coeff_ring1) for i in range(nstar + n0, n0, -1)])
+
+        # Compute the reduction moduli
+        moduli = [ coeff_ring1([self.fast_skew(c, -i*nstar) for c in mu_coeffs ]) for i in range(1, n1) ]
+        # Reduce and apply coefficient-wise frobenius
+        power_reduction_matrs = [self.power_reduction(C, i*nstar, moduli[i-1], coeff_ring1) for i in range(1, n1) ]
+        power_reduction_matrs.reverse()
+        return prod(power_reduction_matrs)*C*C0
 
 
     def charpoly(self, prec = 0):
@@ -857,7 +878,9 @@ if base_test:
     crys_cohom = DrinfeldCohomology_Crys(dm5)
     #print(crys_mat)
     print("char poly")
-    crys_char_poly = crys_cohom.charpoly(nn/mm)
+    precis = (nn / mm)
+    #crys_char_poly = crys_cohom.charpoly(nn/mm)
+    crys_char_poly = crys_cohom.charpoly(precis)
     print(crys_char_poly)
     cfer = get_coeffs(crys_char_poly)
     gamma_t = dm5[0]
@@ -866,7 +889,7 @@ if base_test:
     print(cp_gek)
     print("checking gekeler algorithm (should be 0)")
     print(check_char_gek(dm5, cp_gek))
-    h = dm5.n()//dm5._a_char.degree() # precision
+    h = precis #dm5.n()//dm5._a_char.degree() + 1 # precision
 
     print("check mod")
     nring = PolynomialRing(dm5.L(), 'Xi')

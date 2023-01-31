@@ -272,7 +272,6 @@ class DrinfeldModule():
         if ext > deg:
             return
         phi_x += [[self.L().zero() for j in range(r*i + 1)] for i in range(ext, deg + 1)]
-        phi_x[1] = self._gen.coefficients(sparse=False)
         for i in range(max(2, ext), deg + 1):
             for j in range(r*i + 1):
                 """
